@@ -1,0 +1,27 @@
+# ── Python ───────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.ruff_cache/
+.venv/
+venv/
+
+# ── Runtime artifacts ────────────────────────────────────────────
+*.log
+*.session
+*.session-journal
+
+# ── Per-user runtime data (contains auth state, settings) ───────
+ads/sessions/
+ads/user_data/
+
+# ── Environment ─────────────────────────────────────────────────
+.env
+
+# ── Database ─────────────────────────────────────────────────────
+data/
+*.db
+
+# ── Docker ───────────────────────────────────────────────────────
+docker-compose.override.yml

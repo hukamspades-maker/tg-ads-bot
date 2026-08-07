@@ -1,0 +1,83 @@
+{
+  "message": "",
+  "interval_seconds": 300,
+  "delay_between_sends": 3,
+  "random_delay": true,
+  "random_delay_min": 2.0,
+  "random_delay_max": 8.0,
+  "selected_groups": [],
+  "fetched_groups": [],
+  "loop_active": false,
+  "schedules": [],
+  "log_forwarding_enabled": false,
+  "log_group_id": null,
+  "topic_groups": [],
+  "broadcast_mode": "selected",
+  "forward_mode": false,
+  "forward_channel_id": null,
+  "forward_message_id": null,
+  "forward_active": false,
+  "forward_hide_sender": true,
+  "forward_channel_username": null,
+  "forward_channel_title": null,
+  "forward_is_public": null,
+  "forward_album_ids": [],
+  "forward_source_invalid": false,
+  "user_mode": null,
+  "fetch_group_account_map": {},
+  "loop_active_accounts": {},
+  "immediate_send": false,
+  "media_type": null,
+  "media_file_path": null,
+  "auto_groups": [
+    {
+      "id": -1001584862016,
+      "title": "aNamaka | Trade & Middleman",
+      "topic_id": null,
+      "topic_title": null,
+      "is_forum": false
+    },
+    {
+      "id": -1004363099146,
+      "title": "Silent Ads Logs",
+      "topic_id": null,
+      "topic_title": null,
+      "is_forum": false
+    },
+    {
+      "id": -1002258144410,
+      "title": "corporate_account_Runn",
+      "topic_id": null,
+      "topic_title": null,
+      "is_forum": false
+    },
+    {
+      "id": -4816089644,
+      "title": "Razor Party（古兹曼827）",
+      "topic_id": null,
+      "topic_title": null,
+      "is_forum": false
+    },
+    {
+      "id": -5160939147,
+      "title": "Hack bgmi",
+      "topic_id": null,
+      "topic_title": null,
+      "is_forum": false
+    },
+    {
+      "id": -1003529673688,
+      "title": "STYX CHAT [ V. 3 ]",
+      "topic_id": null,
+      "topic_title": null,
+      "is_forum": false
+    },
+    {
+      "id": -1002384694950,
+      "title": "精英 107 work",
+      "topic_id": null,
+      "topic_title": null,
+      "is_forum": false
+    }
+  ]
+}

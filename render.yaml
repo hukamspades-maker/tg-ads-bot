@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: tg-ads-bot-dashboard
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python run_dashboard.py
+    envVars:
+      - key: BOT_TOKEN
+        value: 8182671400:AAEGXPOP53KN3MK8rn--jIuoe388MYyga_U
+      - key: OWNER_ID
+        value: "8603872187"
+      - key: WEB_HOST
+        value: 0.0.0.0
+      - key: WEB_USERNAME
+        value: admin
+      - key: WEB_PASSWORD
+        value: admin

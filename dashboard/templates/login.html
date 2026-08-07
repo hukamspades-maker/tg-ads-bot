@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+    <meta name="theme-color" content="#0a0820">
+    <title>Login — TG Bot Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-0: #08051a;
+            --bg-1: #0f0c29;
+            --bg-2: #1a1346;
+        }
+        html, body {
+            -webkit-tap-highlight-color: transparent;
+        }
+        body {
+            background:
+                radial-gradient(1200px 600px at 10% -10%, rgba(129, 140, 248, 0.20), transparent 60%),
+                radial-gradient(900px 500px at 100% 0%, rgba(167, 139, 250, 0.18), transparent 60%),
+                radial-gradient(900px 700px at 50% 120%, rgba(34, 211, 238, 0.14), transparent 60%),
+                linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 50%, var(--bg-2) 100%);
+            background-attachment: fixed;
+            min-height: 100vh;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            color: #e5e7eb;
+            letter-spacing: -0.005em;
+        }
+
+        /* Ambient orbs */
+        .bg-orbs { position: fixed; inset: 0; overflow: hidden; z-index: 0; pointer-events: none; }
+        .orb { position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.55; }
+        .orb-1 {
+            width: 420px; height: 420px;
+            background: radial-gradient(circle, #6366f1 0%, transparent 70%);
+            top: -120px; left: -80px;
+            animation: float-a 18s ease-in-out infinite;
+        }
+        .orb-2 {
+            width: 520px; height: 520px;
+            background: radial-gradient(circle, #a78bfa 0%, transparent 70%);
+            bottom: -180px; right: -120px;
+            animation: float-b 22s ease-in-out infinite;
+        }
+        @keyframes float-a {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            50% { transform: translate(60px, 40px) scale(1.08); }
+        }
+        @keyframes float-b {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            50% { transform: translate(-80px, -60px) scale(1.1); }
+        }
+
+        .glass {
+            position: relative;
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(22px) saturate(160%);
+            -webkit-backdrop-filter: blur(22px) saturate(160%);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow:
+                0 1px 0 rgba(255, 255, 255, 0.06) inset,
+                0 20px 60px rgba(8, 5, 26, 0.55);
+        }
+        .glass::after {
+            content: "";
+            position: absolute; inset: 0;
+            border-radius: inherit;
+            pointer-events: none;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 40%);
+        }
+        .neon-border {
+            box-shadow:
+                0 0 0 1px rgba(129, 140, 248, 0.20) inset,
+                0 0 30px rgba(129, 140, 248, 0.18),
+                0 20px 60px rgba(8, 5, 26, 0.55);
+        }
+        .brand-mark {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 3.5rem; height: 3.5rem;
+            border-radius: 1rem;
+            background: linear-gradient(135deg, rgba(129, 140, 248, 0.40), rgba(167, 139, 250, 0.40));
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 8px 28px rgba(129, 140, 248, 0.30);
+            font-size: 1.75rem;
+            margin: 0 auto;
+        }
+        .brand-text {
+            background: linear-gradient(90deg, #c7d2fe 0%, #e9d5ff 50%, #a5f3fc 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+        .glass-input {
+            background: rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid rgba(255, 255, 255, 0.10);
+            color: #f9fafb;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .glass-input::placeholder { color: #6b7280; }
+        .glass-input:focus {
+            outline: none;
+            border-color: rgba(129, 140, 248, 0.55);
+            box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.20);
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 10px 30px rgba(99, 102, 241, 0.35);
+            transition: transform 0.15s ease, box-shadow 0.2s ease;
+        }
+        .btn-primary:hover {
+            box-shadow: 0 14px 40px rgba(99, 102, 241, 0.55);
+            transform: translateY(-1px);
+        }
+        .btn-primary:active { transform: scale(0.98); }
+        @media (prefers-reduced-motion: reduce) {
+            .orb { animation: none; }
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center p-4">
+    <div class="bg-orbs" aria-hidden="true">
+        <span class="orb orb-1"></span>
+        <span class="orb orb-2"></span>
+    </div>
+
+    <div class="glass neon-border rounded-3xl p-7 sm:p-9 w-full max-w-md relative z-10">
+        <div class="text-center mb-8 relative">
+            <div class="brand-mark mb-4">🤖</div>
+            <h1 class="text-2xl font-bold"><span class="brand-text">TG Bot Dashboard</span></h1>
+            <p class="text-gray-400 text-sm mt-2">Sign in to access the control panel</p>
+        </div>
+
+        <form id="loginForm" class="space-y-5 relative">
+            <div>
+                <label class="block text-xs font-medium text-gray-300 mb-2 uppercase tracking-wider">Username</label>
+                <input type="text" id="username" required autocomplete="username"
+                    class="glass-input w-full px-4 py-3 rounded-xl"
+                    placeholder="admin">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-300 mb-2 uppercase tracking-wider">Password</label>
+                <input type="password" id="password" required autocomplete="current-password"
+                    class="glass-input w-full px-4 py-3 rounded-xl"
+                    placeholder="••••••••">
+            </div>
+            <div id="error" class="hidden text-red-400 text-sm text-center"></div>
+            <button type="submit"
+                class="btn-primary w-full py-3 rounded-xl text-white font-semibold tracking-wide">
+                Sign In
+            </button>
+        </form>
+        <p class="text-center text-[11px] text-gray-500 mt-6 tracking-widest uppercase">Premium Control Panel</p>
+    </div>
+
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const errorEl = document.getElementById('error');
+
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({username, password}),
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    localStorage.setItem('token', data.access_token);
+                    window.location.href = '/';
+                } else {
+                    errorEl.textContent = 'Invalid credentials';
+                    errorEl.classList.remove('hidden');
+                }
+            } catch (err) {
+                errorEl.textContent = 'Connection error';
+                errorEl.classList.remove('hidden');
+            }
+        });
+    </script>
+</body>
+</html>

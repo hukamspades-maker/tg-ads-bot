@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+    <meta name="theme-color" content="#0a0820">
+    <title>TG Bot Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+</head>
+<body class="text-white min-h-screen" x-data="dashboard()" :class="{ 'overflow-hidden': sidebarOpen }">
+    <!-- Ambient background orbs -->
+    <div class="bg-orbs" aria-hidden="true">
+        <span class="orb orb-1"></span>
+        <span class="orb orb-2"></span>
+        <span class="orb orb-3"></span>
+    </div>
+
+    <!-- Sidebar -->
+    <aside class="sidebar fixed left-0 top-0 h-full w-72 z-50 flex flex-col transition-transform duration-300 ease-out"
+           :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'">
+        <div class="p-6 border-b border-white/10">
+            <h1 class="text-xl font-bold flex items-center gap-3">
+                <span class="brand-mark">🤖</span>
+                <span class="brand-text">TG Dashboard</span>
+            </h1>
+            <p class="text-[11px] text-gray-400 mt-1 ml-11 tracking-wider uppercase">Control Panel</p>
+        </div>
+        <nav class="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+            <template x-for="item in navItems" :key="item.id">
+                <a :href="'/' + (item.id === 'dashboard' ? '' : item.id)"
+                   @click.prevent="navigate(item.id)"
+                   class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl"
+                   :class="currentPage === item.id ? 'nav-active' : 'text-gray-400 hover:text-white'">
+                    <span class="text-lg" x-text="item.icon"></span>
+                    <span x-text="item.label" class="text-sm font-medium"></span>
+                </a>
+            </template>
+        </nav>
+        <div class="p-4 border-t border-white/10">
+            <button @click="logout()" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all">
+                <span>🚪</span>
+                <span class="text-sm font-medium">Logout</span>
+            </button>
+        </div>
+    </aside>
+
+    <!-- Mobile backdrop -->
+    <div x-show="sidebarOpen" x-transition.opacity
+         @click="sidebarOpen = false"
+         class="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden"
+         x-cloak></div>
+
+    <!-- Mobile header -->
+    <header class="md:hidden fixed top-0 left-0 right-0 h-14 glass-header z-40 flex items-center px-4 safe-top">
+        <button @click="sidebarOpen = !sidebarOpen" aria-label="Open menu"
+                class="text-white p-2 rounded-lg hover:bg-white/10 transition">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+        <span class="ml-2 font-semibold tracking-wide">
+            <span class="brand-mark text-base">🤖</span>
+            <span class="brand-text ml-1">TG Dashboard</span>
+        </span>
+        <span class="ml-auto px-2.5 py-1 rounded-full text-[10px] uppercase tracking-widest bg-gradient-to-r from-indigo-500/20 to-purple-500/20 border border-indigo-400/30 text-indigo-200">Premium</span>
+    </header>
+
+    <!-- Main content -->
+    <main class="md:ml-72 px-4 pt-20 pb-24 md:p-8 min-h-screen">
+        <!-- Dashboard Page -->
+        <div x-show="currentPage === 'dashboard'" x-cloak>
+            <div class="flex items-center justify-between mb-6">
+                <div>
+                    <h2 class="page-title">Global Overview</h2>
+                    <p class="page-sub">Realtime telemetry across all accounts</p>
+                </div>
+                <span class="hidden md:inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs glass-pill">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"></span>
+                    Live
+                </span>
+            </div>
+
+            <!-- Stats Grid -->
+            <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-4 mb-8">
+                <template x-for="stat in overviewStats" :key="stat.label">
+                    <div class="stat-card glass-card p-4 rounded-2xl">
+                        <div class="text-[10px] text-gray-400 uppercase tracking-[0.12em]" x-text="stat.label"></div>
+                        <div class="text-2xl font-bold mt-1" :class="stat.color" x-text="stat.value"></div>
+                    </div>
+                </template>
+            </div>
+
+            <!-- Charts Row -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+                <div class="glass-card p-5 md:p-6 rounded-2xl">
+                    <h3 class="text-base md:text-lg font-semibold mb-4">Messages Per Hour</h3>
+                    <div id="chart-hourly" class="h-56 md:h-64"></div>
+                </div>
+                <div class="glass-card p-5 md:p-6 rounded-2xl">
+                    <h3 class="text-base md:text-lg font-semibold mb-4">Daily Performance</h3>
+                    <div id="chart-daily" class="h-56 md:h-64"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Accounts Page -->
+        <div x-show="currentPage === 'accounts'" x-cloak>
+            <h2 class="page-title mb-6">Account Management</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <template x-for="acc in accounts" :key="acc.phone">
+                    <div class="glass-card p-5 rounded-2xl">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <div class="w-2.5 h-2.5 rounded-full" :class="acc.is_online ? 'bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.7)]' : 'bg-gray-500'"></div>
+                                <span class="font-semibold" x-text="acc.name || acc.phone"></span>
+                            </div>
+                            <span class="text-[10px] px-2 py-1 rounded-full uppercase tracking-wider"
+                                  :class="statusClass(acc.status)"
+                                  x-text="acc.status"></span>
+                        </div>
+                        <div class="space-y-1 text-sm text-gray-400">
+                            <div>📱 <span x-text="acc.phone"></span></div>
+                            <div>📨 Sent: <span class="text-green-400" x-text="acc.messages_sent"></span></div>
+                            <div>❌ Failed: <span class="text-red-400" x-text="acc.messages_failed"></span></div>
+                            <div>📊 Rate: <span class="text-indigo-400" x-text="acc.success_rate + '%'"></span></div>
+                            <div>👥 Groups: <span x-text="acc.joined_groups"></span></div>
+                        </div>
+                        <div class="flex flex-wrap gap-2 mt-4">
+                            <button @click="accountAction(acc.phone, 'pause')" class="action-btn text-xs px-3 py-1.5 rounded-lg bg-yellow-600/15 text-yellow-300 hover:bg-yellow-600/30">Pause</button>
+                            <button @click="accountAction(acc.phone, 'resume')" class="action-btn text-xs px-3 py-1.5 rounded-lg bg-green-600/15 text-green-300 hover:bg-green-600/30">Resume</button>
+                            <button @click="accountAction(acc.phone, 'reconnect')" class="action-btn text-xs px-3 py-1.5 rounded-lg bg-blue-600/15 text-blue-300 hover:bg-blue-600/30">Reconnect</button>
+                            <button @click="accountAction(acc.phone, 'restart')" class="action-btn text-xs px-3 py-1.5 rounded-lg bg-purple-600/15 text-purple-300 hover:bg-purple-600/30">Restart</button>
+                            <button @click="accountAction(acc.phone, 'remove')" class="action-btn text-xs px-3 py-1.5 rounded-lg bg-red-600/15 text-red-300 hover:bg-red-600/30">Remove</button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+            <div x-show="accounts.length === 0" class="text-center text-gray-500 py-12">
+                No accounts found. Add accounts via the Telegram bot.
+            </div>
+        </div>
+
+        <!-- Logs Page -->
+        <div x-show="currentPage === 'logs'" x-cloak>
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-6">
+                <h2 class="page-title">Live Logs</h2>
+                <div class="flex flex-wrap gap-2">
+                    <select x-model="logFilter.category" @change="fetchLogs()" class="glass-input text-sm">
+                        <option value="">All Categories</option>
+                        <option value="login">Login</option>
+                        <option value="send">Send</option>
+                        <option value="failed">Failed</option>
+                        <option value="error">Error</option>
+                        <option value="flood">Flood</option>
+                        <option value="scheduler">Scheduler</option>
+                        <option value="session">Session</option>
+                    </select>
+                    <select x-model="logFilter.level" @change="fetchLogs()" class="glass-input text-sm">
+                        <option value="">All Levels</option>
+                        <option value="info">Info</option>
+                        <option value="warning">Warning</option>
+                        <option value="error">Error</option>
+                    </select>
+                    <button @click="clearLogs()" class="px-3 py-1.5 rounded-lg bg-red-600/15 text-red-300 hover:bg-red-600/30 text-sm transition">Clear</button>
+                </div>
+            </div>
+            <div class="glass-card rounded-2xl p-3 md:p-4 h-[calc(100vh-220px)] overflow-y-auto font-mono text-xs" id="log-container">
+                <template x-for="(log, idx) in logs" :key="idx">
+                    <div class="log-entry py-1 border-b border-white/5 flex gap-2 flex-wrap md:flex-nowrap" :class="logLevelClass(log.level)">
+                        <span class="text-gray-500 shrink-0" x-text="formatTime(log.timestamp)"></span>
+                        <span class="shrink-0 w-16 uppercase font-bold" :class="logLevelColor(log.level)" x-text="log.level"></span>
+                        <span class="shrink-0 text-indigo-400 w-20" x-text="'[' + log.category + ']'"></span>
+                        <span class="text-gray-300 break-words" x-text="log.message"></span>
+                    </div>
+                </template>
+                <div x-show="logs.length === 0" class="text-center text-gray-500 py-8">
+                    No logs yet. Waiting for activity...
+                </div>
+            </div>
+        </div>
+
+        <!-- Analytics Page -->
+        <div x-show="currentPage === 'analytics'" x-cloak>
+            <h2 class="page-title mb-6">Analytics</h2>
+            <div class="flex flex-wrap gap-2 mb-6">
+                <template x-for="p in ['today','yesterday','weekly','monthly','lifetime']" :key="p">
+                    <button @click="fetchPeriodStats(p)"
+                            class="px-4 py-2 rounded-xl text-sm transition-all"
+                            :class="selectedPeriod === p ? 'period-active' : 'glass-pill text-gray-300 hover:text-white'">
+                        <span x-text="p.charAt(0).toUpperCase() + p.slice(1)"></span>
+                    </button>
+                </template>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4 mb-8">
+                <div class="glass-card p-4 rounded-2xl">
+                    <div class="text-[10px] text-gray-400 uppercase tracking-[0.12em]">Sent</div>
+                    <div class="text-xl font-bold text-green-400" x-text="periodStats.sent"></div>
+                </div>
+                <div class="glass-card p-4 rounded-2xl">
+                    <div class="text-[10px] text-gray-400 uppercase tracking-[0.12em]">Failed</div>
+                    <div class="text-xl font-bold text-red-400" x-text="periodStats.failed"></div>
+                </div>
+                <div class="glass-card p-4 rounded-2xl">
+                    <div class="text-[10px] text-gray-400 uppercase tracking-[0.12em]">Success Rate</div>
+                    <div class="text-xl font-bold text-indigo-400" x-text="periodStats.success_rate + '%'"></div>
+                </div>
+                <div class="glass-card p-4 rounded-2xl">
+                    <div class="text-[10px] text-gray-400 uppercase tracking-[0.12em]">Flood Waits</div>
+                    <div class="text-xl font-bold text-yellow-400" x-text="periodStats.flood_waits"></div>
+                </div>
+                <div class="glass-card p-4 rounded-2xl">
+                    <div class="text-[10px] text-gray-400 uppercase tracking-[0.12em]">Queue Processed</div>
+                    <div class="text-xl font-bold text-cyan-400" x-text="periodStats.queue_processed"></div>
+                </div>
+            </div>
+            <div class="glass-card p-5 md:p-6 rounded-2xl">
+                <h3 class="text-base md:text-lg font-semibold mb-4">Success vs Failure</h3>
+                <div id="chart-success-fail" class="h-56 md:h-64"></div>
+            </div>
+        </div>
+
+        <!-- Imports Page -->
+        <div x-show="currentPage === 'imports'" x-cloak>
+            <h2 class="page-title mb-6">Import System</h2>
+            <div class="glass-card p-5 md:p-6 rounded-2xl mb-6">
+                <h3 class="font-semibold mb-4">Import Sessions</h3>
+                <div class="border-2 border-dashed border-white/15 rounded-2xl p-8 text-center hover:border-indigo-400/40 transition">
+                    <input type="file" id="importFile" accept=".session,.zip" multiple class="hidden">
+                    <label for="importFile" class="cursor-pointer text-gray-400 hover:text-indigo-300 transition-colors">
+                        <div class="text-4xl mb-2">📁</div>
+                        <div>Drop .session files or .zip archive here</div>
+                        <div class="text-xs mt-1">Supports bulk import with duplicate detection</div>
+                    </label>
+                </div>
+            </div>
+            <div class="glass-card p-5 md:p-6 rounded-2xl" x-show="importStatus.active">
+                <div class="flex justify-between mb-2">
+                    <span>Progress</span>
+                    <span x-text="importStatus.progress + '%'"></span>
+                </div>
+                <div class="w-full bg-white/5 rounded-full h-3 overflow-hidden">
+                    <div class="bg-gradient-to-r from-indigo-500 to-purple-500 h-3 rounded-full transition-all" :style="'width:' + importStatus.progress + '%'"></div>
+                </div>
+                <div class="grid grid-cols-3 gap-4 mt-4 text-sm">
+                    <div>Imported: <span class="text-green-400" x-text="importStatus.imported"></span></div>
+                    <div>Failed: <span class="text-red-400" x-text="importStatus.failed"></span></div>
+                    <div>Speed: <span class="text-cyan-400" x-text="importStatus.speed + '/s'"></span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Exports Page -->
+        <div x-show="currentPage === 'exports'" x-cloak>
+            <h2 class="page-title mb-6">Export System</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <button class="glass-card p-6 rounded-2xl text-left hover:border-indigo-400/40 transition-all">
+                    <div class="text-2xl mb-2">📦</div>
+                    <div class="font-semibold">Export All Sessions</div>
+                    <div class="text-xs text-gray-400 mt-1">Download all session files as ZIP</div>
+                </button>
+                <button class="glass-card p-6 rounded-2xl text-left hover:border-green-400/40 transition-all">
+                    <div class="text-2xl mb-2">✅</div>
+                    <div class="font-semibold">Export Active Only</div>
+                    <div class="text-xs text-gray-400 mt-1">Only active/healthy sessions</div>
+                </button>
+                <button class="glass-card p-6 rounded-2xl text-left hover:border-yellow-400/40 transition-all">
+                    <div class="text-2xl mb-2">⭐</div>
+                    <div class="font-semibold">Export Premium Only</div>
+                    <div class="text-xs text-gray-400 mt-1">Only premium accounts</div>
+                </button>
+            </div>
+        </div>
+
+        <!-- Premium Page -->
+        <div x-show="currentPage === 'premium'" x-cloak>
+            <h2 class="page-title mb-6">Premium Management</h2>
+            <!-- Grant Premium Form -->
+            <div class="glass-card p-5 md:p-6 rounded-2xl mb-6">
+                <h3 class="font-semibold mb-4">Grant Premium</h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <div>
+                        <label class="text-xs text-gray-400 uppercase tracking-wider mb-1 block">User ID</label>
+                        <input type="text" x-model="premiumGrantForm.user_id" placeholder="e.g. 123456789"
+                               class="glass-input w-full px-4 py-2.5 rounded-xl text-sm">
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-400 uppercase tracking-wider mb-1 block">Duration</label>
+                        <input type="text" x-model="premiumGrantForm.duration" placeholder="e.g. 7d, 3h, 1d12h"
+                               class="glass-input w-full px-4 py-2.5 rounded-xl text-sm">
+                    </div>
+                    <div class="flex items-end">
+                        <button @click="grantPremium()" class="w-full px-4 py-2.5 rounded-xl text-sm font-medium bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 transition-all">Grant</button>
+                    </div>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <span class="text-xs text-gray-400 py-1">Quick Plans:</span>
+                    <template x-for="plan in premiumPlans" :key="plan.id">
+                        <button @click="grantPremiumPlan(plan.id)"
+                                class="px-3 py-1.5 rounded-lg text-xs bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/40 transition">
+                            <span x-text="plan.label + ' ($' + plan.price + ')'"></span>
+                        </button>
+                    </template>
+                </div>
+            </div>
+            <!-- Premium Users List -->
+            <div class="glass-card p-5 md:p-6 rounded-2xl">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-semibold">Premium Users</h3>
+                    <span class="text-xs text-gray-400" x-text="premiumUsers.filter(u => u.active).length + ' active'"></span>
+                </div>
+                <div class="space-y-2">
+                    <template x-for="u in premiumUsers" :key="u.user_id">
+                        <div class="flex items-center justify-between p-3 bg-white/5 rounded-xl">
+                            <div class="flex items-center gap-3">
+                                <div class="w-2.5 h-2.5 rounded-full" :class="u.active ? 'bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.7)]' : 'bg-gray-500'"></div>
+                                <div>
+                                    <span class="font-medium" x-text="u.user_id"></span>
+                                    <span class="text-xs text-gray-400 ml-2" x-text="u.plan || 'custom'"></span>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <span class="text-xs" :class="u.active ? 'text-green-400' : 'text-red-400'" x-text="premiumTimeLeft(u.expires_at)"></span>
+                                <button @click="revokePremium(u.user_id)" class="text-xs px-2 py-1 rounded-lg bg-red-600/15 text-red-300 hover:bg-red-600/30 transition">Revoke</button>
+                            </div>
+                        </div>
+                    </template>
+                    <div x-show="premiumUsers.length === 0" class="text-center text-gray-500 py-8">
+                        No premium users. Grant premium using the form above.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Force Join Page -->
+        <div x-show="currentPage === 'forcejoin'" x-cloak>
+            <h2 class="page-title mb-6">Force Join Management</h2>
+            <!-- Add Channel Form -->
+            <div class="glass-card p-5 md:p-6 rounded-2xl mb-6">
+                <h3 class="font-semibold mb-4">Add Channel</h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label class="text-xs text-gray-400 uppercase tracking-wider mb-1 block">Channel</label>
+                        <input type="text" x-model="fjAddForm.channel" placeholder="@channel or -1001234567890"
+                               class="glass-input w-full px-4 py-2.5 rounded-xl text-sm">
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-400 uppercase tracking-wider mb-1 block">Title (optional)</label>
+                        <input type="text" x-model="fjAddForm.title" placeholder="Channel name"
+                               class="glass-input w-full px-4 py-2.5 rounded-xl text-sm">
+                    </div>
+                    <div class="flex items-end">
+                        <button @click="addForceJoinChannel()" class="w-full px-4 py-2.5 rounded-xl text-sm font-medium bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 transition-all">Add Channel</button>
+                    </div>
+                </div>
+                <p class="text-xs text-gray-500 mt-3">Users must join all listed channels before they can use the bot. Make sure the bot is an admin of each channel.</p>
+            </div>
+            <!-- Channels List -->
+            <div class="glass-card p-5 md:p-6 rounded-2xl">
+                <h3 class="font-semibold mb-4">Active Channels</h3>
+                <div class="space-y-2">
+                    <template x-for="ch in forceJoinChannels" :key="ch.channel">
+                        <div class="flex items-center justify-between p-3 bg-white/5 rounded-xl">
+                            <div class="flex items-center gap-3">
+                                <span class="text-lg">🔗</span>
+                                <div>
+                                    <span class="font-medium" x-text="ch.title || ch.channel"></span>
+                                    <span class="text-xs text-gray-400 ml-2" x-text="ch.channel"></span>
+                                </div>
+                            </div>
+                            <button @click="removeForceJoinChannel(ch.channel)" class="text-xs px-2 py-1 rounded-lg bg-red-600/15 text-red-300 hover:bg-red-600/30 transition">Remove</button>
+                        </div>
+                    </template>
+                    <div x-show="forceJoinChannels.length === 0" class="text-center text-gray-500 py-8">
+                        No force join channels. Add one above.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Broadcast Page -->
+        <div x-show="currentPage === 'broadcast'" x-cloak>
+            <h2 class="page-title mb-6">Broadcast Management</h2>
+            <div class="glass-card p-5 md:p-6 rounded-2xl">
+                <h3 class="font-semibold mb-4">Current Broadcast Status</h3>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div class="bg-white/5 p-4 rounded-xl">
+                        <div class="text-[10px] text-gray-400 uppercase tracking-wider">Loop</div>
+                        <div class="text-lg font-bold mt-1" :class="broadcastStatus.loop_running ? 'text-green-400' : 'text-red-400'"
+                             x-text="broadcastStatus.loop_running ? 'Running' : 'Stopped'"></div>
+                    </div>
+                    <div class="bg-white/5 p-4 rounded-xl">
+                        <div class="text-[10px] text-gray-400 uppercase tracking-wider">Interval</div>
+                        <div class="text-lg font-bold mt-1 text-indigo-400" x-text="broadcastStatus.interval ? (broadcastStatus.interval + 's') : 'Not set'"></div>
+                    </div>
+                    <div class="bg-white/5 p-4 rounded-xl">
+                        <div class="text-[10px] text-gray-400 uppercase tracking-wider">Delay</div>
+                        <div class="text-lg font-bold mt-1 text-cyan-400" x-text="broadcastStatus.delay + 's'"></div>
+                    </div>
+                    <div class="bg-white/5 p-4 rounded-xl">
+                        <div class="text-[10px] text-gray-400 uppercase tracking-wider">Media</div>
+                        <div class="text-lg font-bold mt-1 text-purple-400" x-text="broadcastStatus.media_type || 'None'"></div>
+                    </div>
+                </div>
+                <div class="bg-white/5 p-4 rounded-xl">
+                    <div class="text-xs text-gray-400 uppercase tracking-wider mb-2">Current Message</div>
+                    <div class="text-sm text-gray-300 whitespace-pre-wrap" x-text="broadcastStatus.message || 'No message set'"></div>
+                </div>
+                <p class="text-xs text-gray-500 mt-4">Broadcast settings are controlled via the Telegram bot admin panel. Use the bot to set messages, intervals, and start/stop loops.</p>
+                <button @click="fetchBroadcast()" class="mt-4 px-4 py-2 rounded-xl text-sm bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/40 transition">Refresh Status</button>
+            </div>
+        </div>
+
+        <!-- Scheduler Page -->
+        <div x-show="currentPage === 'scheduler'" x-cloak>
+            <h2 class="page-title mb-6">Scheduler</h2>
+            <div class="glass-card p-5 md:p-6 rounded-2xl">
+                <div class="space-y-3">
+                    <template x-for="job in schedulerJobs" :key="job.job_id">
+                        <div class="flex items-center justify-between p-3 bg-white/5 rounded-xl">
+                            <div>
+                                <span class="font-medium" x-text="job.job_id"></span>
+                                <span class="text-xs text-gray-400 ml-2" x-text="job.schedule_type"></span>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <span class="text-xs" x-text="'Runs: ' + job.run_count"></span>
+                                <span class="w-2 h-2 rounded-full" :class="job.is_active ? 'bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.7)]' : 'bg-gray-500'"></span>
+                            </div>
+                        </div>
+                    </template>
+                    <div x-show="schedulerJobs.length === 0" class="text-center text-gray-500 py-8">
+                        No scheduled tasks. Create schedules via the Telegram bot.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Mobile bottom navigation -->
+    <nav class="mobile-tabbar md:hidden fixed bottom-0 left-0 right-0 z-40 px-3 pb-3 pt-2 safe-bottom">
+        <div class="glass-tabbar flex items-center justify-around rounded-2xl px-2 py-2">
+            <template x-for="item in navItems.slice(0, 5)" :key="item.id">
+                <button @click="navigate(item.id)"
+                        class="tab-btn flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all flex-1"
+                        :class="currentPage === item.id ? 'tab-active' : 'text-gray-400'">
+                    <span class="text-lg leading-none" x-text="item.icon"></span>
+                    <span class="text-[10px] font-medium" x-text="item.label.split(' ')[0]"></span>
+                </button>
+            </template>
+        </div>
+    </nav>
+
+    <!-- Toast notifications -->
+    <div class="fixed bottom-24 md:bottom-4 right-4 z-50 space-y-2" id="toasts">
+        <template x-for="toast in toasts" :key="toast.id">
+            <div class="glass-card px-4 py-3 rounded-xl flex items-center gap-2 animate-slide-in"
+                 :class="toast.type === 'error' ? 'border-red-500/50' : 'border-green-500/50'">
+                <span x-text="toast.type === 'error' ? '❌' : '✅'"></span>
+                <span class="text-sm" x-text="toast.message"></span>
+            </div>
+        </template>
+    </div>
+
+    <script src="/static/js/dashboard.js"></script>
+</body>
+</html>
