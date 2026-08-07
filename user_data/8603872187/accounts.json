@@ -1,4 +1,13 @@
 {
-  "accounts": [],
-  "active_phone": null
+  "accounts": [
+    {
+      "phone": "+573145974165",
+      "name": "Guzman",
+      "api_id": 28822372,
+      "api_hash": "99978f7cdf7bed10f7f35b1a15d85908",
+      "log_group_id": -1003958732334,
+      "round_counter": 0
+    }
+  ],
+  "active_phone": "+573145974165"
 }

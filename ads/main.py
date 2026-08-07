@@ -771,8 +771,8 @@ def is_owner(uid: int) -> bool:
 
 
 def has_access(uid: int) -> bool:
-    """Gate: owner and configured ADMIN_IDS can use the bot."""
-    return uid == OWNER_ID or uid in ADMIN_IDS
+    """Gate: owner, configured ADMIN_IDS, or active premium customer members can use the bot."""
+    return uid == OWNER_ID or uid in ADMIN_IDS or PremiumManager.is_premium(uid)
 
 
 # Static admin label used in broadcast logs (replaces dynamic plan_badge).
@@ -2840,6 +2840,113 @@ async def cmd_help(message: Message) -> None:
             [create_button("Read Full Guide", "receipt", url="https://telegra.ph/Ads-bot-guidance-02-25", style="PRIMARY")],
         ]),
     )
+
+
+# ── Owner-only Telegram membership management ─────────────────────
+@router.message(Command("grant"))
+async def cmd_grant(message: Message) -> None:
+    """Owner command to grant membership to a customer via Telegram: /grant <user_id> <duration>"""
+    uid = message.from_user.id
+    if not is_owner(uid):
+        await message.reply("❌ <b>Only the Owner can grant customer membership and access.</b>", parse_mode="HTML")
+        return
+    parts = message.text.strip().split()
+    if len(parts) < 3:
+        await message.reply(
+            "📝 <b>Usage:</b> <code>/grant &lt;user_id&gt; &lt;duration&gt;</code>\n\n"
+            "<b>Examples:</b>\n"
+            "• <code>/grant 123456789 30d</code>\n"
+            "• <code>/grant 123456789 7d</code>\n"
+            "• <code>/grant 123456789 12h</code>",
+            parse_mode="HTML"
+        )
+        return
+    try:
+        target_uid = int(parts[1])
+    except ValueError:
+        await message.reply("❌ Invalid user ID. Provide a numeric Telegram user ID.")
+        return
+    dur_str = parts[2]
+    parsed = _parse_duration(dur_str)
+    if not parsed:
+        await message.reply("❌ Invalid duration. Use formats like <code>30d</code>, <code>7d</code>, <code>24h</code>.", parse_mode="HTML")
+        return
+    duration_secs, label = parsed
+    entry = await PremiumManager.grant(target_uid, duration_secs, label, uid)
+    await message.reply(
+        f"✅ <b>Customer Membership Granted!</b>\n\n"
+        f"👤 <b>User ID:</b> <code>{target_uid}</code>\n"
+        f"⚙️ <b>Plan:</b> {label}\n"
+        f"📅 <b>Expires:</b> {entry['expires_at'][:19]} UTC\n"
+        f"👑 <b>Granted By:</b> Owner (<code>{uid}</code>)",
+        parse_mode="HTML"
+    )
+
+@router.message(Command("revoke"))
+async def cmd_revoke(message: Message) -> None:
+    """Owner command to revoke membership from a customer via Telegram: /revoke <user_id>"""
+    uid = message.from_user.id
+    if not is_owner(uid):
+        await message.reply("❌ <b>Only the Owner can revoke customer membership.</b>", parse_mode="HTML")
+        return
+    parts = message.text.strip().split()
+    if len(parts) < 2:
+        await message.reply("📝 <b>Usage:</b> <code>/revoke &lt;user_id&gt;</code>", parse_mode="HTML")
+        return
+    try:
+        target_uid = int(parts[1])
+    except ValueError:
+        await message.reply("❌ Invalid user ID. Provide a numeric Telegram user ID.")
+        return
+    removed = await PremiumManager.revoke(target_uid)
+    if removed:
+        await message.reply(f"✅ <b>Membership Revoked!</b>\n\nUser <code>{target_uid}</code> no longer has access to the bot.", parse_mode="HTML")
+    else:
+        await message.reply(f"⚠️ User <code>{target_uid}</code> did not have an active membership.", parse_mode="HTML")
+
+@router.message(Command("members"))
+@router.message(Command("users"))
+async def cmd_members(message: Message) -> None:
+    """Owner command to list all active customer memberships."""
+    uid = message.from_user.id
+    if not is_owner(uid):
+        await _deny(message, uid); return
+    active = [u for u in PremiumManager.get_all() if u["active"]]
+    if not active:
+        await message.reply("📋 <b>Active Customer Memberships:</b> None", parse_mode="HTML")
+        return
+    lines = ["👥 <b>Active Customer Memberships</b>\n", "━━━━━━━━━━━━━━━━━━━━\n"]
+    for i, u in enumerate(active, 1):
+        lines.append(f"{i}. User: <code>{u['user_id']}</code> | Plan: {u.get('plan', 'N/A')} | Exp: {u.get('expires_at', '')[:10]}")
+    await message.reply("\n".join(lines), parse_mode="HTML")
+
+@router.message(Command("myplan"))
+@router.message(Command("status"))
+async def cmd_myplan(message: Message) -> None:
+    """Customer command to check their current membership status."""
+    uid = message.from_user.id
+    if is_owner(uid):
+        await message.reply("👑 <b>You are the Permanent Owner.</b>\nFull unlimited access.", parse_mode="HTML")
+        return
+    user_info = PremiumManager.get_user(uid)
+    if user_info and user_info.get("active"):
+        exp = user_info.get("expires_at", "")[:19]
+        plan = user_info.get("plan", "Active")
+        await message.reply(
+            f"⭐ <b>Your Membership Status</b>\n\n"
+            f"👤 User ID: <code>{uid}</code>\n"
+            f"⚙️ Plan: <b>{plan}</b>\n"
+            f"📅 Expires: <b>{exp} UTC</b>\n"
+            f"✅ Access: Active",
+            parse_mode="HTML"
+        )
+    else:
+        await message.reply(
+            "❌ <b>No Active Membership</b>\n\n"
+            "You do not have active membership access.\n"
+            "Contact the Owner to get membership access.",
+            parse_mode="HTML"
+        )
 
 
 # ── /admins  (owner-only) ─────────────────────────────────────────
