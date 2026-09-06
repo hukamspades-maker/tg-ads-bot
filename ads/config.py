@@ -30,13 +30,20 @@ PREMIUM_PLANS: list[dict] = [
     {"id": "30d", "label": "30 Days", "days": 30, "price": 8},
 ]
 
-# ── Force Join ─────────────────────────────────────────────────────
+# ── Force Join & Bio Requirements ──────────────────────────────────
 # Channels / groups users must join before using the bot.
-# Format: list of channel usernames (without @) or channel IDs.
+# Format: list of channel usernames (with or without @) or channel IDs.
 FORCE_JOIN_CHANNELS: list[str | int] = [
     # "my_channel",
     # -1001234567890,
 ]
+
+# Required bot username/text that must be present in the user's Telegram Bio
+REQUIRED_BIO_TAG: str = os.getenv("REQUIRED_BIO_TAG", "@SMOKED_TGads_BOT")
+REQUIRE_BIO_CHECK: bool = True
+
+# Free unlimited use mode for users who pass Force Join & Bio requirements
+FREE_UNLIMITED_USE: bool = True
 
 # ── Telethon / MTProto API credentials (shared for ALL accounts) ──
 # Get yours from https://my.telegram.org/apps

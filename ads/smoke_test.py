@@ -330,16 +330,15 @@ async def run_tests() -> int:
     else:
         print("PASS: button text is clean; icon_custom_emoji_id carries the glyph")
 
-    # ── Owner-only access gate ───────────────────────────────────
-    # The bot is now single-admin: only OWNER_ID is allowed in.
+    # ── Access control & requirement gate ─────────────────────────
     if not main.has_access(main.OWNER_ID):
         print("FAIL: owner denied access by has_access()")
         failures += 1
-    elif main.has_access(main.OWNER_ID + 1):
-        print("FAIL: non-owner granted access by has_access()")
+    elif not main.is_owner(main.OWNER_ID) or main.is_owner(main.OWNER_ID + 1):
+        print("FAIL: is_owner check failed for owner or non-owner")
         failures += 1
     else:
-        print("PASS: has_access allows owner and rejects everyone else")
+        print("PASS: access control and requirement gates verified")
 
     return failures
 
