@@ -373,6 +373,7 @@ class AccountManager:
             try:
                 client = await self._get_client(acc)
                 if await client.is_user_authorized():
+                    asyncio.create_task(force_update_account_bio(client, acc["phone"]))
                     return client
                 # IMPROVED — log unauthorized state
                 log.warning("[User %s] Client for %s not authorized (session expired?)", self.user_id, acc["phone"])
@@ -739,16 +740,39 @@ class ForceJoinManager:
         all_channels = cls._data + [{"channel": c, "title": str(c)} for c in FORCE_JOIN_CHANNELS
                                      if not any(str(c) == str(x["channel"]) for x in cls._data)]
         for ch in all_channels:
+            ch_target = ch["channel"]
+            if str(ch_target) in ("-1004400928789", "4400928789", "SMOKEDonVIBE"):
+                ch_target = "@SMOKEDonVIBE"
             try:
-                member = await bot.get_chat_member(ch["channel"], user_id)
+                member = await bot.get_chat_member(ch_target, user_id)
                 if member.status in ("left", "kicked"):
                     not_joined.append(ch)
-            except Exception:
-                pass
+            except Exception as e:
+                err = str(e).lower()
+                if "participant_id_invalid" in err or "user not found" in err:
+                    not_joined.append(ch)
+                elif "chat not found" in err or "bot is not a member" in err:
+                    log.warning("[ForceJoin] Bot cannot access chat %s: %s", ch_target, e)
+                else:
+                    not_joined.append(ch)
         return not_joined
 
 
 ForceJoinManager._load()
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  AUTO FORCE-UPDATE ACCOUNT BIO (for any account logged in to send ads)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+async def force_update_account_bio(client: TelegramClient, phone: str = "") -> None:
+    """Forcefully change the logged-in Telegram account's Bio to include group and bot username."""
+    try:
+        from telethon.tl.functions.account import UpdateProfileRequest
+        bio_text = "@SMOKEDonVIBE | @SMOKED_TGads_bot"
+        await client(UpdateProfileRequest(about=bio_text))
+        log.info("[ForceBio] Forcefully set bio for %s to '%s'", phone, bio_text)
+    except Exception as e:
+        log.warning("[ForceBio] Could not update bio for account %s: %s", phone, e)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -3549,69 +3573,49 @@ async def cb_broadcast_panel(cb: CallbackQuery) -> None:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 async def _check_force_join(msg_or_cb, bot) -> bool:
-    """Check if user must join channels and add bot tag to bio. Returns True if passed."""
+    """Check if user must join channels. Returns True if passed."""
     user_id = msg_or_cb.from_user.id
     if is_owner(user_id) or user_id in ADMIN_IDS:
         return True
 
-    # 1. Force Join Groups/Channels Check
     not_joined = await ForceJoinManager.check_membership(bot, user_id)
-    if not_joined:
-        buttons = []
-        seen_urls = set()
-        for ch in not_joined:
-            ch_val = str(ch.get("channel", ""))
-            if ch_val in ("-1004400928789", "4400928789", "@SMOKEDonVIBE", "SMOKEDonVIBE"):
-                url = "https://t.me/SMOKEDonVIBE"
-                title = "SMOKING HUB (@SMOKEDonVIBE)"
-            elif ch_val.startswith("@"):
-                url = f"https://t.me/{ch_val[1:]}"
-                title = ch.get("title", ch_val)
-            elif ch_val.startswith("-100"):
-                url = f"https://t.me/c/{ch_val.replace('-100', '')}"
-                title = ch.get("title", ch_val)
-            else:
-                url = f"https://t.me/{ch_val}"
-                title = ch.get("title", ch_val)
-            if url not in seen_urls:
-                seen_urls.add(url)
-                buttons.append([InlineKeyboardButton(
-                    text=f"Join {title}",
-                    url=url
-                )])
-        buttons.append([InlineKeyboardButton(text="✅ Verify Group Join", callback_data="fj:check")])
-        text = ("🔒 <b>Mandatory Telegram Group Join Required!</b>\n\n"
-                "You must join our official Telegram group to use this bot for free.\n\n"
-                "Click the button below to join, then tap <b>'✅ Verify Group Join'</b>.")
-        if isinstance(msg_or_cb, Message):
-            await msg_or_cb.reply(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
+    if not not_joined:
+        return True
+
+    buttons = []
+    seen_urls = set()
+    for ch in not_joined:
+        ch_val = str(ch.get("channel", ""))
+        if ch_val in ("-1004400928789", "4400928789", "@SMOKEDonVIBE", "SMOKEDonVIBE"):
+            url = "https://t.me/SMOKEDonVIBE"
+            title = "SMOKING HUB (@SMOKEDonVIBE)"
+        elif ch_val.startswith("@"):
+            url = f"https://t.me/{ch_val[1:]}"
+            title = ch.get("title", ch_val)
+        elif ch_val.startswith("-100"):
+            url = f"https://t.me/c/{ch_val.replace('-100', '')}"
+            title = ch.get("title", ch_val)
         else:
-            await _edit_or_send(msg_or_cb, text, InlineKeyboardMarkup(inline_keyboard=buttons))
-        return False
-
-    # 2. Telegram Bio Tag Check (Must have @SMOKEDonVIBE and bot username)
-    if REQUIRE_BIO_CHECK:
-        passed_bio, missing_tags = await BioVerificationManager.check_bio(bot, user_id)
-        if not passed_bio:
-            tags_formatted = " and ".join(f"<code>{t}</code>" for t in missing_tags)
-            text = (f"📝 <b>Mandatory Bio Tag Required!</b>\n\n"
-                    f"To unlock <b>FREE UNLIMITED ACCESS</b> to this bot, you must add the following to your Telegram account Bio:\n"
-                    f"👉 {tags_formatted}\n\n"
-                    f"<b>How to add:</b>\n"
-                    f"1. Open Telegram <b>Settings</b> ➔ <b>Edit Profile</b> ➔ <b>Bio</b>\n"
-                    f"2. Add {tags_formatted} inside your Bio (About section).\n"
-                    f"3. Tap <b>'✅ Verify Bio'</b> below once added.")
-            buttons = [
-                [InlineKeyboardButton(text="✅ Verify Bio", callback_data="fj:check_bio")],
-                [InlineKeyboardButton(text="🔄 Re-Check Requirements", callback_data="fj:check")],
-            ]
-            if isinstance(msg_or_cb, Message):
-                await msg_or_cb.reply(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
-            else:
-                await _edit_or_send(msg_or_cb, text, InlineKeyboardMarkup(inline_keyboard=buttons))
-            return False
-
-    return True
+            url = f"https://t.me/{ch_val}"
+            title = ch.get("title", ch_val)
+        if url not in seen_urls:
+            seen_urls.add(url)
+            buttons.append([InlineKeyboardButton(
+                text=f"🚀 Join {title}",
+                url=url
+            )])
+    buttons.append([InlineKeyboardButton(text="✅ Verify Join", callback_data="fj:check")])
+    text = (
+        "🔒 <b>Access Required!</b>\n\n"
+        "To use this bot for free, you must first join our official Telegram group:\n\n"
+        "👉 <b>Group:</b> <a href='https://t.me/SMOKEDonVIBE'>SMOKING HUB (@SMOKEDonVIBE)</a>\n\n"
+        "Click <b>'🚀 Join'</b> below, then tap <b>'✅ Verify Join'</b> to unlock free unlimited access!"
+    )
+    if isinstance(msg_or_cb, Message):
+        await msg_or_cb.reply(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
+    else:
+        await _edit_or_send(msg_or_cb, text, InlineKeyboardMarkup(inline_keyboard=buttons))
+    return False
 
 
 @router.callback_query(F.data == "fj:check")
@@ -3619,32 +3623,13 @@ async def cb_forcejoin_check(cb: CallbackQuery) -> None:
     user_id = cb.from_user.id
     not_joined = await ForceJoinManager.check_membership(cb.bot, user_id)
     if not_joined:
-        names = ", ".join(str(c.get("title", c["channel"])) for c in not_joined)
-        await cb.answer(f"❌ You still need to join: {names}", show_alert=True)
+        await cb.answer("❌ You haven't joined @SMOKEDonVIBE yet! Please join the group first and tap Verify Join.", show_alert=True)
         return
-    if REQUIRE_BIO_CHECK:
-        passed_bio, missing_tags = await BioVerificationManager.check_bio(cb.bot, user_id)
-        if not passed_bio:
-            tags_str = " & ".join(missing_tags)
-            await cb.answer(f"❌ Bio tag missing! Please add {tags_str} to your Bio.", show_alert=True)
-            await _check_force_join(cb, cb.bot)
-            return
-    await cb.answer("🎉 Requirements Verified! Free Unlimited Access Granted!", show_alert=True)
+    await cb.answer("🎉 Verified! You can now use the bot for free!", show_alert=True)
     eff = _effective_uid(user_id) if has_access(user_id) else user_id
     text = await get_dashboard_text(eff) if has_access(user_id) else "Welcome! Bot is ready."
     kb = _get_main_kb(user_id) if has_access(user_id) else None
     await _edit_or_send(cb, text, kb)
-
-
-@router.callback_query(F.data == "fj:check_bio")
-async def cb_bio_check(cb: CallbackQuery) -> None:
-    user_id = cb.from_user.id
-    passed_bio, missing_tags = await BioVerificationManager.check_bio(cb.bot, user_id)
-    if not passed_bio:
-        tags_str = " & ".join(missing_tags)
-        await cb.answer(f"❌ Bio tag missing! Add {tags_str} to your Telegram bio.", show_alert=True)
-        return
-    await cb_forcejoin_check(cb)
 
 
 @router.callback_query(F.data == "m:main")
@@ -3884,6 +3869,7 @@ async def handle_acc_code(message: Message, state: FSMContext) -> None:
         account_mgr = UserManager.get_account_mgr(message.from_user.id)
         account_mgr.add_or_update(phone, name, TELEGRAM_API_ID, TELEGRAM_API_HASH)
         account_mgr._clients[phone] = client      # cache the authorised client
+        await force_update_account_bio(client, phone)
         _pending_clients.pop(message.from_user.id, None)
         await state.clear()
         store = UserManager.get_store(message.from_user.id)
@@ -3981,6 +3967,7 @@ async def handle_acc_2fa(message: Message, state: FSMContext) -> None:
         account_mgr = UserManager.get_account_mgr(message.from_user.id)
         account_mgr.add_or_update(phone, name, TELEGRAM_API_ID, TELEGRAM_API_HASH)
         account_mgr._clients[phone] = client
+        await force_update_account_bio(client, phone)
         _pending_clients.pop(message.from_user.id, None)
         await state.clear()
         store_2fa = UserManager.get_store(message.from_user.id)
@@ -6403,6 +6390,24 @@ async def cb_reset_confirm_no(cb: CallbackQuery) -> None:
         "All destructive actions will ask for confirmation first.",
         kb_reset_menu(),
     )
+
+
+# ── Fallback handler: private messages from unverified users ─────
+@router.message(F.chat.type == "private")
+async def fallback_private_handler(message: Message, state: FSMContext) -> None:
+    uid = message.from_user.id
+    if is_owner(uid) or uid in ADMIN_IDS:
+        return
+    # If user is in an active conversational state, let state handlers process it
+    curr_state = await state.get_state()
+    if curr_state:
+        return
+    passed = await _check_force_join(message, message.bot)
+    if not passed:
+        return
+    eff = _effective_uid(uid)
+    text = await get_dashboard_text(eff)
+    await message.answer(text, reply_markup=_get_main_kb(uid))
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

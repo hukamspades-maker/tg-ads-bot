@@ -35,7 +35,6 @@ PREMIUM_PLANS: list[dict] = [
 # Format: list of channel usernames (with or without @) or channel IDs.
 FORCE_JOIN_CHANNELS: list[str | int] = [
     "@SMOKEDonVIBE",
-    -1004400928789,
 ]
 
 # Required bot usernames/tags that must be present in user's Telegram Bio
