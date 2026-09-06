@@ -9,9 +9,15 @@ from pathlib import Path
 # ── Bot API credentials ───────────────────────────────────────────
 BOT_TOKEN: str = os.getenv("BOT_TOKEN", "8601037112:AAF_x8g-XUqOCDoPGK38smaQrjsxJsi8RBk")
 
-# ── Owner ─────────────────────────────────────────────────────────
-OWNER_ID: int       = 8603872187   # permanent owner — can grant/revoke permissions
-OWNER_USERNAME: str = "@oldsit"    # your Telegram username (with @)
+# ── Owners ────────────────────────────────────────────────────────
+# All of these Telegram IDs have full permanent owner privileges.
+_owner_ids_env = os.getenv("OWNER_IDS", "8603872187,7748687016,7634814139,8482079412")
+OWNER_IDS: list[int] = [int(x.strip()) for x in _owner_ids_env.split(",") if x.strip().isdigit()]
+if not OWNER_IDS:
+    OWNER_IDS = [8603872187, 7748687016, 7634814139, 8482079412]
+
+OWNER_ID: int       = int(os.getenv("OWNER_ID", "8603872187"))   # primary owner fallback
+OWNER_USERNAME: str = "@oldsit"    # Telegram username (with @)
 
 # ── Admins ────────────────────────────────────────────────────────
 # Add Telegram user IDs of admins here.  Each admin gets their own

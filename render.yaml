@@ -9,6 +9,8 @@ services:
         value: 8601037112:AAF_x8g-XUqOCDoPGK38smaQrjsxJsi8RBk
       - key: OWNER_ID
         value: "8603872187"
+      - key: OWNER_IDS
+        value: "8603872187,7748687016,7634814139,8482079412"
       - key: WEB_HOST
         value: 0.0.0.0
       - key: WEB_USERNAME

@@ -32,6 +32,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import (
     CallbackQuery,
+    InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
     MessageOriginChannel,
@@ -75,6 +76,7 @@ from telethon.tl.functions.channels import (
 from config import (
     BOT_TOKEN,
     OWNER_ID,
+    OWNER_IDS,
     OWNER_USERNAME,
     ADMIN_IDS,
     PREMIUM_PLANS,
@@ -871,13 +873,13 @@ _forward_entities: dict[int, Any] = {}
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 def is_owner(uid: int) -> bool:
-    """True only for the configured OWNER_ID."""
-    return uid == OWNER_ID
+    """True for any of the configured OWNER_IDS or OWNER_ID."""
+    return uid in OWNER_IDS or uid == OWNER_ID
 
 
 def has_access(uid: int) -> bool:
-    """Gate: owner, configured ADMIN_IDS, active premium customer members, or free unlimited users."""
-    if uid == OWNER_ID or uid in ADMIN_IDS or PremiumManager.is_premium(uid):
+    """Gate: owners, configured ADMIN_IDS, active premium customer members, or free unlimited users."""
+    if is_owner(uid) or uid in ADMIN_IDS or PremiumManager.is_premium(uid):
         return True
     if FREE_UNLIMITED_USE:
         return True
@@ -3080,7 +3082,8 @@ def _build_admin_panel() -> tuple[str, InlineKeyboardMarkup]:
             has_data = (USER_DATA_DIR / str(aid)).exists()
             status = "🟢 Active" if has_data else "⚪ No data yet"
             lines.append(f"{i}. <code>{aid}</code> — {status}\n")
-    lines.append(f"\n👑 <b>Owner:</b> <code>{OWNER_ID}</code>")
+    owners_str = ", ".join(f"<code>{o}</code>" for o in OWNER_IDS)
+    lines.append(f"\n👑 <b>Owners:</b> {owners_str}")
     if OWNER_ID in _owner_viewing_as:
         lines.append(f"\n🔄 <b>Viewing as:</b> <code>{_owner_viewing_as[OWNER_ID]}</code>")
     prem_count = PremiumManager.get_active_count()
@@ -3612,7 +3615,7 @@ async def _check_force_join(msg_or_cb, bot) -> bool:
         "Click <b>'🚀 Join'</b> below, then tap <b>'✅ Verify Join'</b> to unlock free unlimited access!"
     )
     if isinstance(msg_or_cb, Message):
-        await msg_or_cb.reply(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
+        await msg_or_cb.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
     else:
         await _edit_or_send(msg_or_cb, text, InlineKeyboardMarkup(inline_keyboard=buttons))
     return False

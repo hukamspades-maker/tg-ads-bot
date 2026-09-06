@@ -331,14 +331,15 @@ async def run_tests() -> int:
         print("PASS: button text is clean; icon_custom_emoji_id carries the glyph")
 
     # ── Access control & requirement gate ─────────────────────────
-    if not main.has_access(main.OWNER_ID):
-        print("FAIL: owner denied access by has_access()")
+    target_owners = [8603872187, 7748687016, 7634814139, 8482079412]
+    if not all(main.is_owner(oid) and main.has_access(oid) for oid in target_owners):
+        print("FAIL: one or more owners not recognized by is_owner/has_access")
         failures += 1
-    elif not main.is_owner(main.OWNER_ID) or main.is_owner(main.OWNER_ID + 1):
-        print("FAIL: is_owner check failed for owner or non-owner")
+    elif main.is_owner(111111111):
+        print("FAIL: non-owner granted owner status")
         failures += 1
     else:
-        print("PASS: access control and requirement gates verified")
+        print("PASS: all 4 configured owners verified successfully")
 
     return failures
 
