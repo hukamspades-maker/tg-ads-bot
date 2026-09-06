@@ -80,6 +80,7 @@ from config import (
     PREMIUM_PLANS,
     FORCE_JOIN_CHANNELS,
     REQUIRED_BIO_TAG,
+    REQUIRED_BIO_TAGS,
     REQUIRE_BIO_CHECK,
     FREE_UNLIMITED_USE,
     TELEGRAM_API_ID,
@@ -780,25 +781,44 @@ class BioVerificationManager:
         os.replace(str(tmp), str(cls._file))
 
     @classmethod
-    async def check_bio(cls, bot: Bot, user_id: int) -> bool:
-        """Check if the user's Telegram Bio contains REQUIRED_BIO_TAG."""
-        if not REQUIRE_BIO_CHECK or not REQUIRED_BIO_TAG:
-            return True
+    async def check_bio(cls, bot: Bot, user_id: int) -> tuple[bool, list[str]]:
+        """Check if user's Telegram Bio contains all required tags:
+        1. @SMOKEDonVIBE
+        2. Bot username (@SMOKED_TGads_bot)
+        Returns (passed: bool, missing_tags: list[str]).
+        """
+        if not REQUIRE_BIO_CHECK:
+            return True, []
+
+        tags_to_check = list(REQUIRED_BIO_TAGS) if "REQUIRED_BIO_TAGS" in globals() else ["@SMOKEDonVIBE"]
+        try:
+            me = await bot.get_me()
+            if me.username:
+                bot_tag = f"@{me.username}"
+                if not any(bot_tag.lower() == t.lower() for t in tags_to_check):
+                    tags_to_check.append(bot_tag)
+        except Exception:
+            pass
+
         try:
             chat = await bot.get_chat(user_id)
             bio = (getattr(chat, "bio", None) or "").lower()
-            tag = REQUIRED_BIO_TAG.lower()
-            tag_no_at = tag.lstrip("@")
-            if tag in bio or tag_no_at in bio:
+            missing = []
+            for tag in tags_to_check:
+                clean = tag.lower().lstrip("@")
+                if tag.lower() not in bio and clean not in bio:
+                    missing.append(tag)
+            if not missing:
                 async with cls._lock:
                     cls._data[str(user_id)] = True
                     cls._save()
-                return True
+                return True, []
+            return False, missing
         except Exception as e:
             log.warning("[BioCheck] Exception inspecting bio for user %s: %s", user_id, e)
             if cls._data.get(str(user_id)):
-                return True
-        return False
+                return True, []
+            return False, tags_to_check
 
     @classmethod
     def is_verified(cls, user_id: int) -> bool:
@@ -3538,38 +3558,48 @@ async def _check_force_join(msg_or_cb, bot) -> bool:
     not_joined = await ForceJoinManager.check_membership(bot, user_id)
     if not_joined:
         buttons = []
+        seen_urls = set()
         for ch in not_joined:
-            ch_val = ch["channel"]
-            if isinstance(ch_val, str) and ch_val.startswith("@"):
+            ch_val = str(ch.get("channel", ""))
+            if ch_val in ("-1004400928789", "4400928789", "@SMOKEDonVIBE", "SMOKEDonVIBE"):
+                url = "https://t.me/SMOKEDonVIBE"
+                title = "SMOKING HUB (@SMOKEDonVIBE)"
+            elif ch_val.startswith("@"):
                 url = f"https://t.me/{ch_val[1:]}"
-            elif isinstance(ch_val, str):
-                url = f"https://t.me/{ch_val}"
+                title = ch.get("title", ch_val)
+            elif ch_val.startswith("-100"):
+                url = f"https://t.me/c/{ch_val.replace('-100', '')}"
+                title = ch.get("title", ch_val)
             else:
-                url = f"https://t.me/c/{str(ch_val).replace('-100', '')}"
-            buttons.append([InlineKeyboardButton(
-                text=f"Join {ch.get('title', ch_val)}",
-                url=url
-            )])
+                url = f"https://t.me/{ch_val}"
+                title = ch.get("title", ch_val)
+            if url not in seen_urls:
+                seen_urls.add(url)
+                buttons.append([InlineKeyboardButton(
+                    text=f"Join {title}",
+                    url=url
+                )])
         buttons.append([InlineKeyboardButton(text="✅ Verify Group Join", callback_data="fj:check")])
         text = ("🔒 <b>Mandatory Telegram Group Join Required!</b>\n\n"
-                "You must join our official Telegram group/channel to use this bot for free.\n\n"
-                "Click the buttons below to join, then tap <b>'✅ Verify Group Join'</b>.")
+                "You must join our official Telegram group to use this bot for free.\n\n"
+                "Click the button below to join, then tap <b>'✅ Verify Group Join'</b>.")
         if isinstance(msg_or_cb, Message):
             await msg_or_cb.reply(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
         else:
             await _edit_or_send(msg_or_cb, text, InlineKeyboardMarkup(inline_keyboard=buttons))
         return False
 
-    # 2. Telegram Bio Tag Check
-    if REQUIRE_BIO_CHECK and REQUIRED_BIO_TAG:
-        has_bio = await BioVerificationManager.check_bio(bot, user_id)
-        if not has_bio:
-            tag = REQUIRED_BIO_TAG
+    # 2. Telegram Bio Tag Check (Must have @SMOKEDonVIBE and bot username)
+    if REQUIRE_BIO_CHECK:
+        passed_bio, missing_tags = await BioVerificationManager.check_bio(bot, user_id)
+        if not passed_bio:
+            tags_formatted = " and ".join(f"<code>{t}</code>" for t in missing_tags)
             text = (f"📝 <b>Mandatory Bio Tag Required!</b>\n\n"
-                    f"To unlock <b>FREE UNLIMITED ACCESS</b> to this bot, you must add <code>{tag}</code> to your Telegram account Bio!\n\n"
+                    f"To unlock <b>FREE UNLIMITED ACCESS</b> to this bot, you must add the following to your Telegram account Bio:\n"
+                    f"👉 {tags_formatted}\n\n"
                     f"<b>How to add:</b>\n"
-                    f"1. Open Telegram <b>Settings</b> $\\rightarrow$ <b>Edit Profile</b> $\\rightarrow$ <b>Bio</b>\n"
-                    f"2. Add <code>{tag}</code> inside your Bio (About section).\n"
+                    f"1. Open Telegram <b>Settings</b> ➔ <b>Edit Profile</b> ➔ <b>Bio</b>\n"
+                    f"2. Add {tags_formatted} inside your Bio (About section).\n"
                     f"3. Tap <b>'✅ Verify Bio'</b> below once added.")
             buttons = [
                 [InlineKeyboardButton(text="✅ Verify Bio", callback_data="fj:check_bio")],
@@ -3592,10 +3622,11 @@ async def cb_forcejoin_check(cb: CallbackQuery) -> None:
         names = ", ".join(str(c.get("title", c["channel"])) for c in not_joined)
         await cb.answer(f"❌ You still need to join: {names}", show_alert=True)
         return
-    if REQUIRE_BIO_CHECK and REQUIRED_BIO_TAG:
-        has_bio = await BioVerificationManager.check_bio(cb.bot, user_id)
-        if not has_bio:
-            await cb.answer(f"❌ Bio tag missing! Please add {REQUIRED_BIO_TAG} to your Bio.", show_alert=True)
+    if REQUIRE_BIO_CHECK:
+        passed_bio, missing_tags = await BioVerificationManager.check_bio(cb.bot, user_id)
+        if not passed_bio:
+            tags_str = " & ".join(missing_tags)
+            await cb.answer(f"❌ Bio tag missing! Please add {tags_str} to your Bio.", show_alert=True)
             await _check_force_join(cb, cb.bot)
             return
     await cb.answer("🎉 Requirements Verified! Free Unlimited Access Granted!", show_alert=True)
@@ -3608,9 +3639,10 @@ async def cb_forcejoin_check(cb: CallbackQuery) -> None:
 @router.callback_query(F.data == "fj:check_bio")
 async def cb_bio_check(cb: CallbackQuery) -> None:
     user_id = cb.from_user.id
-    has_bio = await BioVerificationManager.check_bio(cb.bot, user_id)
-    if not has_bio:
-        await cb.answer(f"❌ Bio tag missing! Add {REQUIRED_BIO_TAG} to your Telegram bio.", show_alert=True)
+    passed_bio, missing_tags = await BioVerificationManager.check_bio(cb.bot, user_id)
+    if not passed_bio:
+        tags_str = " & ".join(missing_tags)
+        await cb.answer(f"❌ Bio tag missing! Add {tags_str} to your Telegram bio.", show_alert=True)
         return
     await cb_forcejoin_check(cb)
 

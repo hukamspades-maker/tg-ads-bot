@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 # ── Bot API credentials ───────────────────────────────────────────
-BOT_TOKEN: str = os.getenv("BOT_TOKEN", "8182671400:AAEGXPOP53KN3MK8rn--jIuoe388MYyga_U")
+BOT_TOKEN: str = os.getenv("BOT_TOKEN", "8601037112:AAF_x8g-XUqOCDoPGK38smaQrjsxJsi8RBk")
 
 # ── Owner ─────────────────────────────────────────────────────────
 OWNER_ID: int       = 8603872187   # permanent owner — can grant/revoke permissions
@@ -34,12 +34,16 @@ PREMIUM_PLANS: list[dict] = [
 # Channels / groups users must join before using the bot.
 # Format: list of channel usernames (with or without @) or channel IDs.
 FORCE_JOIN_CHANNELS: list[str | int] = [
-    # "my_channel",
-    # -1001234567890,
+    "@SMOKEDonVIBE",
+    -1004400928789,
 ]
 
-# Required bot username/text that must be present in the user's Telegram Bio
-REQUIRED_BIO_TAG: str = os.getenv("REQUIRED_BIO_TAG", "@SMOKED_TGads_BOT")
+# Required bot usernames/tags that must be present in user's Telegram Bio
+REQUIRED_BIO_TAGS: list[str] = [
+    "@SMOKEDonVIBE",
+    "@SMOKED_TGads_bot",
+]
+REQUIRED_BIO_TAG: str = os.getenv("REQUIRED_BIO_TAG", "@SMOKED_TGads_bot")
 REQUIRE_BIO_CHECK: bool = True
 
 # Free unlimited use mode for users who pass Force Join & Bio requirements
