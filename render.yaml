@@ -6,7 +6,7 @@ services:
     startCommand: python ads/main.py
     envVars:
       - key: BOT_TOKEN
-        value: 8601037112:AAF_x8g-XUqOCDoPGK38smaQrjsxJsi8RBk
+        value: 8601037112:AAGxgfOuZ1vHDUseNO1EeBOWOA-2TZg4PRw
       - key: OWNER_ID
         value: "8603872187"
       - key: OWNER_IDS

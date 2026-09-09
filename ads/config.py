@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 # ── Bot API credentials ───────────────────────────────────────────
-BOT_TOKEN: str = os.getenv("BOT_TOKEN", "8601037112:AAF_x8g-XUqOCDoPGK38smaQrjsxJsi8RBk")
+BOT_TOKEN: str = os.getenv("BOT_TOKEN", "8601037112:AAGxgfOuZ1vHDUseNO1EeBOWOA-2TZg4PRw")
 
 # ── Owners ────────────────────────────────────────────────────────
 # All of these Telegram IDs have full permanent owner privileges.
