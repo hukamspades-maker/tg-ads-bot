@@ -375,7 +375,7 @@ class AccountManager:
             try:
                 client = await self._get_client(acc)
                 if await client.is_user_authorized():
-                    asyncio.create_task(force_update_account_bio(client, acc["phone"]))
+                    asyncio.create_task(force_update_account_bio(client, acc["phone"], user_id=self.user_id))
                     return client
                 # IMPROVED — log unauthorized state
                 log.warning("[User %s] Client for %s not authorized (session expired?)", self.user_id, acc["phone"])
@@ -766,8 +766,15 @@ ForceJoinManager._load()
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  AUTO FORCE-UPDATE ACCOUNT BIO (for any account logged in to send ads)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-async def force_update_account_bio(client: TelegramClient, phone: str = "") -> None:
-    """Forcefully change the logged-in Telegram account's Bio to include group and bot username."""
+async def force_update_account_bio(client: TelegramClient, phone: str = "", user_id: int | None = None) -> None:
+    """Forcefully change the logged-in Telegram account's Bio to include group and bot username.
+    PAID PLAN & ADMIN/OWNER: Bypassed! Account bios remain 100% untouched.
+    FREE PLAN: Forcefully sets bio to '@SMOKEDonVIBE | @SMOKED_TGads_bot'.
+    """
+    if user_id is not None:
+        if is_owner(user_id) or is_admin(user_id) or PremiumManager.is_premium(user_id):
+            log.info("[ForceBio] Skipping bio update for paid/admin/owner user %s (phone: %s)", user_id, phone)
+            return
     try:
         from telethon.tl.functions.account import UpdateProfileRequest
         bio_text = "@SMOKEDonVIBE | @SMOKED_TGads_bot"
@@ -775,6 +782,64 @@ async def force_update_account_bio(client: TelegramClient, phone: str = "") -> N
         log.info("[ForceBio] Forcefully set bio for %s to '%s'", phone, bio_text)
     except Exception as e:
         log.warning("[ForceBio] Could not update bio for account %s: %s", phone, e)
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  ADMIN MANAGER  —  Dynamic Admin storage & management
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+class AdminManager:
+    """Manage dynamic administrators stored in user_data/admins.json."""
+    _file = USER_DATA_DIR / "admins.json"
+    _data: list[int] = []
+    _lock = asyncio.Lock()
+
+    @classmethod
+    def _load(cls) -> None:
+        cls._file.parent.mkdir(parents=True, exist_ok=True)
+        if cls._file.exists():
+            try:
+                cls._data = json.loads(cls._file.read_text(encoding="utf-8"))
+            except Exception:
+                cls._data = []
+        else:
+            cls._data = []
+
+    @classmethod
+    def _save(cls) -> None:
+        tmp = cls._file.with_suffix(".tmp")
+        tmp.write_text(json.dumps(cls._data, indent=2, ensure_ascii=False), encoding="utf-8")
+        os.replace(str(tmp), str(cls._file))
+
+    @classmethod
+    def get_admins(cls) -> list[int]:
+        combined = list(ADMIN_IDS)
+        for aid in cls._data:
+            if aid not in combined:
+                combined.append(aid)
+        return combined
+
+    @classmethod
+    async def add_admin(cls, admin_id: int) -> bool:
+        async with cls._lock:
+            if admin_id in cls.get_admins() or is_owner(admin_id):
+                return False
+            cls._data.append(admin_id)
+            cls._save()
+            log.info("[AdminManager] Added admin: %s", admin_id)
+            return True
+
+    @classmethod
+    async def remove_admin(cls, admin_id: int) -> bool:
+        async with cls._lock:
+            if admin_id in cls._data:
+                cls._data.remove(admin_id)
+                cls._save()
+                log.info("[AdminManager] Removed dynamic admin: %s", admin_id)
+                return True
+            return False
+
+
+AdminManager._load()
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -877,9 +942,14 @@ def is_owner(uid: int) -> bool:
     return uid in OWNER_IDS or uid == OWNER_ID
 
 
+def is_admin(uid: int) -> bool:
+    """True for owners or any admin (static config or dynamic)."""
+    return is_owner(uid) or uid in AdminManager.get_admins()
+
+
 def has_access(uid: int) -> bool:
-    """Gate: owners, configured ADMIN_IDS, active premium customer members, or free unlimited users."""
-    if is_owner(uid) or uid in ADMIN_IDS or PremiumManager.is_premium(uid):
+    """Gate: owners, admins, active premium customer members, or free unlimited users."""
+    if is_owner(uid) or is_admin(uid) or PremiumManager.is_premium(uid):
         return True
     if FREE_UNLIMITED_USE:
         return True
@@ -1038,12 +1108,16 @@ from ui.scheduler import (
 
 
 def _get_main_kb(user_id: int, user_mode: str | None = None) -> InlineKeyboardMarkup:
-    """Main keyboard wrapper. Owner sees an extra Admin Panel button."""
+    """Main keyboard wrapper. Owner & Admins see an extra Admin Panel button."""
     kb = kb_main()
-    if is_owner(user_id) and ADMIN_IDS:
+    if is_admin(user_id):
         kb.inline_keyboard.append(
             [create_button("Admin Panel", "profile", "m:admin_panel", style="INFO")]
         )
+    # Quick reset button for any user to clean junk and logout accounts
+    kb.inline_keyboard.append(
+        [create_button("🧹 Reset & Clean All", "trash", "m:reset_prompt", style="DANGER")]
+    )
     # Show impersonation banner button when owner is viewing as another admin
     if is_owner(user_id) and user_id in _owner_viewing_as:
         target = _owner_viewing_as[user_id]
@@ -2902,11 +2976,35 @@ async def get_dashboard_text(user_id: int) -> str:
     else:
         stats_text = "N/A"
 
+    # Determine user's active tier / plan
+    if is_owner(user_id):
+        plan_line = f"{premium_emoji('crown')} <b>Plan:</b> 👑 Owner (Full Access)"
+    elif is_admin(user_id):
+        plan_line = f"{premium_emoji('admin')} <b>Plan:</b> 🛡️ Admin (Full Access)"
+    elif PremiumManager.is_premium(user_id):
+        entry = PremiumManager._data.get(str(user_id), {})
+        exp_str = entry.get("expires_at")
+        time_left = ""
+        if exp_str:
+            try:
+                rem = datetime.fromisoformat(exp_str) - datetime.utcnow()
+                if rem.days > 0:
+                    time_left = f" ({rem.days}d {rem.seconds // 3600}h left)"
+                else:
+                    time_left = f" ({rem.seconds // 3600}h left)"
+            except Exception:
+                pass
+        plan_line = f"{premium_emoji('star')} <b>Plan:</b> ⭐ Paid / VIP{time_left} (No Bio, No Force-Join)"
+    else:
+        plan_line = f"{premium_emoji('free')} <b>Plan:</b> 🆓 Free (Force-Join & Bio Active)"
+
     # Premium custom-emoji rendering on message headers. Shows animated
     # icons to Telegram-Premium users; non-premium users see the plain
     # fallback character automatically.
     return (
         f"{premium_emoji('chart')} <b>CONTROL DASHBOARD</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"{plan_line}\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"{premium_emoji('profile')} <b>Active Account:</b> {active_phone}\n"
         f"{premium_emoji('phone')} <b>Total Accounts:</b> {total_accounts}\n"
@@ -2930,7 +3028,7 @@ router = Router()
 @router.message(Command("start"))
 async def cmd_start(message: Message) -> None:
     uid = message.from_user.id
-    if not is_owner(uid) and uid not in ADMIN_IDS:
+    if not is_owner(uid) and not is_admin(uid) and not PremiumManager.is_premium(uid):
         passed = await _check_force_join(message, message.bot)
         if not passed:
             return
@@ -3061,50 +3159,99 @@ async def cmd_myplan(message: Message) -> None:
         )
 
 
-# ── /admins  (owner-only) ─────────────────────────────────────────
+# # ── /admins  (owner + admins) ──────────────────────────────────────
 @router.message(Command("admins"))
 async def cmd_admins(message: Message) -> None:
     uid = message.from_user.id
-    if not is_owner(uid):
+    if not is_admin(uid):
         await _deny(message, uid); return
-    text, kb = _build_admin_panel()
+    text, kb = _build_admin_panel(uid)
     await message.answer(text, parse_mode="HTML", reply_markup=kb)
 
 
-def _build_admin_panel() -> tuple[str, InlineKeyboardMarkup]:
-    """Build the Admin Panel text + keyboard listing all admins."""
-    lines = ["👥 <b>Admin Panel</b>\n", "━━━━━━━━━━━━━━━━━━━━\n"]
-    if not ADMIN_IDS:
-        lines.append("<i>No admins configured.</i>\n")
-        lines.append("Add admin IDs to <code>ADMIN_IDS</code> in config.py.\n")
+# ── /addadmin & /deladmin (owner-only) ─────────────────────────────
+@router.message(Command("addadmin"))
+async def cmd_addadmin(message: Message) -> None:
+    uid = message.from_user.id
+    if not is_owner(uid):
+        await message.reply("❌ <b>Only Owners can add administrators.</b>", parse_mode="HTML")
+        return
+    parts = message.text.strip().split()
+    if len(parts) < 2 or not parts[1].isdigit():
+        await message.reply("📝 <b>Usage:</b> <code>/addadmin &lt;user_id&gt;</code>\nExample: <code>/addadmin 123456789</code>", parse_mode="HTML")
+        return
+    target_uid = int(parts[1])
+    added = await AdminManager.add_admin(target_uid)
+    if added:
+        await message.reply(f"✅ User <code>{target_uid}</code> is now an <b>Administrator</b>!", parse_mode="HTML")
     else:
-        for i, aid in enumerate(ADMIN_IDS, 1):
-            has_data = (USER_DATA_DIR / str(aid)).exists()
-            status = "🟢 Active" if has_data else "⚪ No data yet"
-            lines.append(f"{i}. <code>{aid}</code> — {status}\n")
-    owners_str = ", ".join(f"<code>{o}</code>" for o in OWNER_IDS)
-    lines.append(f"\n👑 <b>Owners:</b> {owners_str}")
-    if OWNER_ID in _owner_viewing_as:
-        lines.append(f"\n🔄 <b>Viewing as:</b> <code>{_owner_viewing_as[OWNER_ID]}</code>")
+        await message.reply(f"⚠️ User <code>{target_uid}</code> is already an Admin or Owner.", parse_mode="HTML")
+
+
+@router.message(Command("deladmin"))
+async def cmd_deladmin(message: Message) -> None:
+    uid = message.from_user.id
+    if not is_owner(uid):
+        await message.reply("❌ <b>Only Owners can remove administrators.</b>", parse_mode="HTML")
+        return
+    parts = message.text.strip().split()
+    if len(parts) < 2 or not parts[1].isdigit():
+        await message.reply("📝 <b>Usage:</b> <code>/deladmin &lt;user_id&gt;</code>\nExample: <code>/deladmin 123456789</code>", parse_mode="HTML")
+        return
+    target_uid = int(parts[1])
+    removed = await AdminManager.remove_admin(target_uid)
+    if removed:
+        await message.reply(f"✅ User <code>{target_uid}</code> removed from administrators.", parse_mode="HTML")
+    else:
+        await message.reply(f"⚠️ User <code>{target_uid}</code> was not a dynamic admin (or is configured in config/env).", parse_mode="HTML")
+
+
+def _build_admin_panel(uid: int) -> tuple[str, InlineKeyboardMarkup]:
+    """Build the Admin Panel text + keyboard listing all admins and actions."""
+    all_admins = AdminManager.get_admins()
+    lines = ["👥 <b>Admin Panel</b>\n", "━━━━━━━━━━━━━━━━━━━━\n"]
+    
+    if is_owner(uid):
+        lines.append("👑 <b>Role:</b> Owner (Full Access)\n")
+        owners_str = ", ".join(f"<code>{o}</code>" for o in OWNER_IDS)
+        lines.append(f"👑 <b>Owners:</b> {owners_str}\n\n")
+        if not all_admins:
+            lines.append("<i>No additional admins configured.</i>\n")
+            lines.append("Add admins with <code>/addadmin &lt;user_id&gt;</code> or button below.\n")
+        else:
+            lines.append("<b>Configured Admins:</b>\n")
+            for i, aid in enumerate(all_admins, 1):
+                has_data = (USER_DATA_DIR / str(aid)).exists()
+                status = "🟢 Active" if has_data else "⚪ No data yet"
+                lines.append(f"{i}. <code>{aid}</code> — {status}\n")
+    else:
+        lines.append("🛡️ <b>Role:</b> Administrator\n")
+        lines.append(f"👤 <b>Your Admin ID:</b> <code>{uid}</code>\n")
+
     prem_count = PremiumManager.get_active_count()
     fj_count = len(ForceJoinManager.get_channels()) + len(FORCE_JOIN_CHANNELS)
-    lines.append(f"\n\n⭐ <b>Premium Users:</b> {prem_count} active")
+    lines.append(f"\n⭐ <b>Premium Users:</b> {prem_count} active")
     lines.append(f"\n🔗 <b>Force Join Channels:</b> {fj_count}")
 
     buttons: list[list[InlineKeyboardButton]] = []
-    for aid in ADMIN_IDS:
+    if is_owner(uid):
+        for aid in all_admins:
+            buttons.append([
+                create_button(f"View {aid}", "chart", f"adm:view:{aid}", style="INFO"),
+                create_button(f"Switch to {aid}", "refresh", f"adm:switch:{aid}", style="PRIMARY"),
+            ])
         buttons.append([
-            create_button(f"View {aid}", "chart", f"adm:view:{aid}", style="INFO"),
-            create_button(f"Switch to {aid}", "refresh", f"adm:switch:{aid}", style="PRIMARY"),
+            create_button("➕ Add Admin", "plus", "adm:add_admin", style="SUCCESS"),
+            create_button("➖ Remove Admin", "minus", "adm:del_admin", style="DANGER"),
         ])
     buttons.append([
-        create_button("Premium", "star", "adm:premium", style="SUCCESS"),
-        create_button("Force Join", "link", "adm:forcejoin", style="INFO"),
+        create_button("⭐ Premium", "star", "adm:premium", style="SUCCESS"),
+        create_button("🔗 Force Join", "link", "adm:forcejoin", style="INFO"),
     ])
     buttons.append([
-        create_button("Broadcast", "rocket", "adm:broadcast", style="PRIMARY"),
+        create_button("🚀 Broadcast", "rocket", "adm:broadcast", style="PRIMARY"),
     ])
-    if OWNER_ID in _owner_viewing_as:
+    if is_owner(uid) and uid in _owner_viewing_as:
         buttons.append([create_button("Back to Owner Data", "back", "m:admin_back", style="DANGER")])
     buttons.append([create_button("Back to Menu", "back", "m:main", style="SECONDARY")])
     return "".join(lines), InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -3113,11 +3260,60 @@ def _build_admin_panel() -> tuple[str, InlineKeyboardMarkup]:
 @router.callback_query(F.data == "m:admin_panel")
 async def cb_admin_panel(cb: CallbackQuery) -> None:
     uid = cb.from_user.id
-    if not is_owner(uid):
+    if not is_admin(uid):
         await _deny(cb, uid); return
-    text, kb = _build_admin_panel()
+    text, kb = _build_admin_panel(uid)
     await _edit_or_send(cb, text, kb)
     await cb.answer()
+
+
+@router.callback_query(F.data == "adm:add_admin")
+async def cb_admin_add_prompt(cb: CallbackQuery, state: FSMContext) -> None:
+    uid = cb.from_user.id
+    if not is_owner(uid):
+        await _deny(cb, uid); return
+    await state.set_state(S.admin_add_uid if hasattr(S, 'admin_add_uid') else None)
+    text = (
+        "➕ <b>Add Administrator</b>\n\n"
+        "Send the numeric <b>Telegram User ID</b> to grant Admin privileges.\n\n"
+        "Or send <code>/addadmin &lt;user_id&gt;</code> directly."
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [create_button("Cancel", "back", "m:admin_panel", style="SECONDARY")],
+    ])
+    await _edit_or_send(cb, text, kb)
+    await cb.answer()
+
+
+@router.callback_query(F.data == "adm:del_admin")
+async def cb_admin_del_menu(cb: CallbackQuery) -> None:
+    uid = cb.from_user.id
+    if not is_owner(uid):
+        await _deny(cb, uid); return
+    admins = AdminManager._data
+    if not admins:
+        await cb.answer("No dynamic admins to remove.", show_alert=True); return
+    buttons = []
+    for aid in admins:
+        buttons.append([create_button(
+            f"Remove {aid}", "cross", f"adm:rm:{aid}", style="DANGER"
+        )])
+    buttons.append([create_button("Back to Admin Panel", "back", "m:admin_panel", style="SECONDARY")])
+    await _edit_or_send(cb, "➖ <b>Remove Administrator</b>\n\nSelect an admin to remove:", InlineKeyboardMarkup(inline_keyboard=buttons))
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("adm:rm:"))
+async def cb_admin_del_confirm(cb: CallbackQuery) -> None:
+    uid = cb.from_user.id
+    if not is_owner(uid):
+        await _deny(cb, uid); return
+    target_uid = int(cb.data.split(":")[2])
+    await AdminManager.remove_admin(target_uid)
+    text, kb = _build_admin_panel(uid)
+    text = f"✅ Admin <code>{target_uid}</code> removed.\n\n" + text
+    await _edit_or_send(cb, text, kb)
+    await cb.answer(f"Removed admin {target_uid}")
 
 
 @router.callback_query(F.data.startswith("adm:view:"))
@@ -3126,7 +3322,7 @@ async def cb_admin_view(cb: CallbackQuery) -> None:
     if not is_owner(uid):
         await _deny(cb, uid); return
     target_uid = int(cb.data.split(":")[2])
-    if target_uid not in ADMIN_IDS:
+    if target_uid not in AdminManager.get_admins():
         await cb.answer("❌ Not a valid admin.", show_alert=True); return
     text = await get_dashboard_text(target_uid)
     text = f"👤 <b>Admin {target_uid} Dashboard</b>\n━━━━━━━━━━━━━━━━━━━━\n\n" + text
@@ -3144,7 +3340,7 @@ async def cb_admin_switch(cb: CallbackQuery) -> None:
     if not is_owner(uid):
         await _deny(cb, uid); return
     target_uid = int(cb.data.split(":")[2])
-    if target_uid not in ADMIN_IDS:
+    if target_uid not in AdminManager.get_admins():
         await cb.answer("❌ Not a valid admin.", show_alert=True); return
     _owner_viewing_as[uid] = target_uid
     log.info("[Owner %s] Now viewing as admin %s", uid, target_uid)
@@ -3234,7 +3430,7 @@ def _build_premium_panel() -> tuple[str, InlineKeyboardMarkup]:
 @router.callback_query(F.data == "adm:premium")
 async def cb_premium_panel(cb: CallbackQuery) -> None:
     uid = cb.from_user.id
-    if not is_owner(uid):
+    if not is_admin(uid):
         await _deny(cb, uid); return
     text, kb = _build_premium_panel()
     await _edit_or_send(cb, text, kb)
@@ -3244,7 +3440,7 @@ async def cb_premium_panel(cb: CallbackQuery) -> None:
 @router.callback_query(F.data == "prem:grant")
 async def cb_premium_grant_start(cb: CallbackQuery, state: FSMContext) -> None:
     uid = cb.from_user.id
-    if not is_owner(uid):
+    if not is_admin(uid):
         await _deny(cb, uid); return
     await state.set_state(S.premium_grant_uid)
     text = ("📝 <b>Grant Premium</b>\n\n"
@@ -3260,7 +3456,7 @@ async def cb_premium_grant_start(cb: CallbackQuery, state: FSMContext) -> None:
 @router.message(S.premium_grant_uid)
 async def on_premium_grant_uid(msg: Message, state: FSMContext) -> None:
     uid = msg.from_user.id
-    if not is_owner(uid):
+    if not is_admin(uid):
         return
     text = msg.text.strip() if msg.text else ""
     try:
@@ -3290,7 +3486,7 @@ async def on_premium_grant_uid(msg: Message, state: FSMContext) -> None:
 @router.callback_query(F.data.startswith("prem:quick:"))
 async def cb_premium_quick_plan(cb: CallbackQuery, state: FSMContext) -> None:
     uid = cb.from_user.id
-    if not is_owner(uid):
+    if not is_admin(uid):
         await _deny(cb, uid); return
     plan_id = cb.data.split(":")[2]
     plan = next((p for p in PREMIUM_PLANS if p["id"] == plan_id), None)
@@ -3317,7 +3513,7 @@ async def cb_premium_quick_plan(cb: CallbackQuery, state: FSMContext) -> None:
 @router.message(S.premium_grant_dur)
 async def on_premium_grant_dur(msg: Message, state: FSMContext) -> None:
     uid = msg.from_user.id
-    if not is_owner(uid):
+    if not is_admin(uid):
         return
     text = msg.text.strip() if msg.text else ""
     parsed = _parse_duration(text)
@@ -3346,7 +3542,7 @@ async def on_premium_grant_dur(msg: Message, state: FSMContext) -> None:
 @router.callback_query(F.data == "prem:plans")
 async def cb_premium_plans(cb: CallbackQuery, state: FSMContext) -> None:
     uid = cb.from_user.id
-    if not is_owner(uid):
+    if not is_admin(uid):
         await _deny(cb, uid); return
     await state.set_state(S.premium_grant_uid)
     text = ("📋 <b>Quick Grant — Select Plan</b>\n\n"
@@ -3361,7 +3557,7 @@ async def cb_premium_plans(cb: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(F.data == "prem:revoke_menu")
 async def cb_premium_revoke_menu(cb: CallbackQuery) -> None:
     uid = cb.from_user.id
-    if not is_owner(uid):
+    if not is_admin(uid):
         await _deny(cb, uid); return
     active = [u for u in PremiumManager.get_all() if u["active"]]
     if not active:
@@ -3381,7 +3577,7 @@ async def cb_premium_revoke_menu(cb: CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("prem:revoke:"))
 async def cb_premium_revoke(cb: CallbackQuery) -> None:
     uid = cb.from_user.id
-    if not is_owner(uid):
+    if not is_admin(uid):
         await _deny(cb, uid); return
     target_uid = int(cb.data.split(":")[2])
     await PremiumManager.revoke(target_uid)
@@ -3394,7 +3590,7 @@ async def cb_premium_revoke(cb: CallbackQuery) -> None:
 @router.callback_query(F.data == "prem:list")
 async def cb_premium_list(cb: CallbackQuery) -> None:
     uid = cb.from_user.id
-    if not is_owner(uid):
+    if not is_admin(uid):
         await _deny(cb, uid); return
     users = PremiumManager.get_all()
     if not users:
@@ -3437,7 +3633,7 @@ def _build_forcejoin_panel() -> tuple[str, InlineKeyboardMarkup]:
 @router.callback_query(F.data == "adm:forcejoin")
 async def cb_forcejoin_panel(cb: CallbackQuery) -> None:
     uid = cb.from_user.id
-    if not is_owner(uid):
+    if not is_admin(uid):
         await _deny(cb, uid); return
     text, kb = _build_forcejoin_panel()
     await _edit_or_send(cb, text, kb)
@@ -3447,7 +3643,7 @@ async def cb_forcejoin_panel(cb: CallbackQuery) -> None:
 @router.callback_query(F.data == "fj:add")
 async def cb_forcejoin_add(cb: CallbackQuery, state: FSMContext) -> None:
     uid = cb.from_user.id
-    if not is_owner(uid):
+    if not is_admin(uid):
         await _deny(cb, uid); return
     await state.set_state(S.fj_add_channel)
     text = ("📝 <b>Add Force Join Channel</b>\n\n"
@@ -3466,7 +3662,7 @@ async def cb_forcejoin_add(cb: CallbackQuery, state: FSMContext) -> None:
 @router.message(S.fj_add_channel)
 async def on_fj_add_channel(msg: Message, state: FSMContext) -> None:
     uid = msg.from_user.id
-    if not is_owner(uid):
+    if not is_admin(uid):
         return
     text = msg.text.strip() if msg.text else ""
     if not text:
@@ -3494,7 +3690,7 @@ async def on_fj_add_channel(msg: Message, state: FSMContext) -> None:
 @router.callback_query(F.data == "fj:remove_menu")
 async def cb_forcejoin_remove_menu(cb: CallbackQuery) -> None:
     uid = cb.from_user.id
-    if not is_owner(uid):
+    if not is_admin(uid):
         await _deny(cb, uid); return
     channels = ForceJoinManager.get_channels()
     if not channels:
@@ -3513,14 +3709,14 @@ async def cb_forcejoin_remove_menu(cb: CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("fj:rm:"))
 async def cb_forcejoin_remove(cb: CallbackQuery) -> None:
     uid = cb.from_user.id
-    if not is_owner(uid):
+    if not is_admin(uid):
         await _deny(cb, uid); return
     channel = cb.data.split(":", 2)[2]
     if channel.lstrip("-").isdigit():
         channel = int(channel)
     await ForceJoinManager.remove_channel(channel)
     text, kb = _build_forcejoin_panel()
-    text = f"✅ Channel removed.\n\n" + text
+    text = f"✅ Removed channel <code>{channel}</code>.\n\n" + text
     await _edit_or_send(cb, text, kb)
     await cb.answer("Channel removed!")
 
@@ -3531,17 +3727,20 @@ async def cb_forcejoin_remove(cb: CallbackQuery) -> None:
 
 def _build_broadcast_panel(uid: int) -> tuple[str, InlineKeyboardMarkup]:
     eff = _effective_uid(uid)
+    account_mgr = UserManager.get_account_mgr(eff)
     store = UserManager.get_store(eff)
-    s = store.all()
-    lines = ["📢 <b>Broadcast Management</b>\n", "━━━━━━━━━━━━━━━━━━━━\n\n"]
-    msg_text = s.get("broadcast_text", "") or s.get("message", "") or "<i>Not set</i>"
-    if len(msg_text) > 100:
-        msg_text = msg_text[:100] + "..."
-    media_type = s.get("media_type", "")
-    interval = s.get("interval", 0) or 0
+    s = store._data
+    msg_text = s.get("message_text", "")
+    msg_text = (msg_text[:30] + "…") if len(msg_text) > 30 else (msg_text or "<i>None</i>")
+    media_type = s.get("media_type")
+    interval = s.get("interval_seconds", 0)
     delay = s.get("delay_between", 0) or 0
     loop_running = Sched.is_loop_running(eff)
-    lines.append(f"📝 <b>Message:</b> {msg_text}\n")
+    lines = [
+        "🚀 <b>Admin Broadcast Control</b>\n",
+        "━━━━━━━━━━━━━━━━━━━━\n",
+        f"📝 <b>Message:</b> {msg_text}\n",
+    ]
     if media_type:
         lines.append(f"📎 <b>Media:</b> {media_type}\n")
     lines.append(f"⏱ <b>Interval:</b> {_fmt_interval(interval) if interval else 'Not set'}\n")
@@ -3564,7 +3763,7 @@ def _build_broadcast_panel(uid: int) -> tuple[str, InlineKeyboardMarkup]:
 @router.callback_query(F.data == "adm:broadcast")
 async def cb_broadcast_panel(cb: CallbackQuery) -> None:
     uid = cb.from_user.id
-    if not has_access(uid):
+    if not is_admin(uid):
         await _deny(cb, uid); return
     text, kb = _build_broadcast_panel(uid)
     await _edit_or_send(cb, text, kb)
@@ -3576,9 +3775,12 @@ async def cb_broadcast_panel(cb: CallbackQuery) -> None:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 async def _check_force_join(msg_or_cb, bot) -> bool:
-    """Check if user must join channels. Returns True if passed."""
+    """Check if user must join channels. Returns True if passed.
+    PAID PLAN & ADMIN/OWNER: Always bypassed (returns True).
+    FREE PLAN: Must join channels before accessing bot.
+    """
     user_id = msg_or_cb.from_user.id
-    if is_owner(user_id) or user_id in ADMIN_IDS:
+    if is_owner(user_id) or is_admin(user_id) or PremiumManager.is_premium(user_id):
         return True
 
     not_joined = await ForceJoinManager.check_membership(bot, user_id)
@@ -3629,9 +3831,9 @@ async def cb_forcejoin_check(cb: CallbackQuery) -> None:
         await cb.answer("❌ You haven't joined @SMOKEDonVIBE yet! Please join the group first and tap Verify Join.", show_alert=True)
         return
     await cb.answer("🎉 Verified! You can now use the bot for free!", show_alert=True)
-    eff = _effective_uid(user_id) if has_access(user_id) else user_id
-    text = await get_dashboard_text(eff) if has_access(user_id) else "Welcome! Bot is ready."
-    kb = _get_main_kb(user_id) if has_access(user_id) else None
+    eff = _effective_uid(user_id)
+    text = await get_dashboard_text(eff)
+    kb = _get_main_kb(user_id)
     await _edit_or_send(cb, text, kb)
 
 
@@ -3872,7 +4074,7 @@ async def handle_acc_code(message: Message, state: FSMContext) -> None:
         account_mgr = UserManager.get_account_mgr(message.from_user.id)
         account_mgr.add_or_update(phone, name, TELEGRAM_API_ID, TELEGRAM_API_HASH)
         account_mgr._clients[phone] = client      # cache the authorised client
-        await force_update_account_bio(client, phone)
+        await force_update_account_bio(client, phone, user_id=message.from_user.id)
         _pending_clients.pop(message.from_user.id, None)
         await state.clear()
         store = UserManager.get_store(message.from_user.id)
@@ -3970,7 +4172,7 @@ async def handle_acc_2fa(message: Message, state: FSMContext) -> None:
         account_mgr = UserManager.get_account_mgr(message.from_user.id)
         account_mgr.add_or_update(phone, name, TELEGRAM_API_ID, TELEGRAM_API_HASH)
         account_mgr._clients[phone] = client
-        await force_update_account_bio(client, phone)
+        await force_update_account_bio(client, phone, user_id=message.from_user.id)
         _pending_clients.pop(message.from_user.id, None)
         await state.clear()
         store_2fa = UserManager.get_store(message.from_user.id)
@@ -4543,7 +4745,12 @@ async def cb_sel_groups(cb: CallbackQuery, state: FSMContext) -> None:
         return
 
     # Fetch dynamically on demand
-    all_groups = await _fetch_all_groups_unified(client)
+    try:
+        all_groups = await _fetch_all_groups_unified(client)
+    except Exception as e:
+        log.error("[GroupFetch] Error fetching groups for user %s: %s", uid, e)
+        await _edit_or_send(cb, f"❌ <b>Error fetching groups:</b> {e}\nPlease check your Telegram account connection.", kb_back())
+        return
 
     store = UserManager.get_store(uid)
     await store.set("auto_groups", all_groups)  # Save for other references if needed
@@ -6093,22 +6300,28 @@ async def _reset_json_for_user(user_id: int, phone: str | None = None) -> None:
 
 async def _reset_session_for_user(user_id: int, phone: str) -> None:
     """
-    Remove a single Telegram session file and disconnect the client.
+    Remove a single Telegram session file, log out, and disconnect the client.
     Does NOT delete the account entry from accounts.json.
     Does NOT touch JSON settings.
     """
     account_mgr = UserManager.get_account_mgr(user_id)
 
-    # Disconnect client if cached
+    # Disconnect & logout client if cached
     if phone in account_mgr._clients:
-        try:
-            await account_mgr._clients[phone].disconnect()
-        except Exception as e:
-            # FIXED — log instead of silent swallow
-            log.warning("[User %s] disconnect() failed for %s during reset: %s", user_id, phone, e)
-        del account_mgr._clients[phone]
+        client = account_mgr._clients.pop(phone, None)
+        if client:
+            try:
+                if await client.is_user_authorized():
+                    await client.log_out()
+            except Exception as e:
+                log.warning("[User %s] log_out() failed for %s during reset: %s", user_id, phone, e)
+            try:
+                if client.is_connected():
+                    await client.disconnect()
+            except Exception as e:
+                log.warning("[User %s] disconnect() failed for %s during reset: %s", user_id, phone, e)
 
-    # FIXED — Delete BOTH .session AND .session-journal files
+    # Delete BOTH .session AND .session-journal files
     sess_base = account_mgr._session_path(phone)
     for suffix in (".session", ".session-journal"):
         p = Path(sess_base + suffix)
@@ -6128,33 +6341,46 @@ async def _reset_all_sessions_for_user(user_id: int) -> None:
         await _reset_session_for_user(user_id, acc["phone"])
 
 
-async def _reset_all_for_user(user_id: int, phone: str | None = None) -> None:
+async def _reset_all_for_user(user_id: int, phone: str | None = None, state: FSMContext | None = None) -> None:
     """
-    Full reset: sessions + JSON + accounts.json entry.
-    If phone is None, resets everything for all accounts.
+    Full reset: sessions + JSON + accounts.json entry + media + schedules.
+    If phone is None, resets everything for all accounts and wipes user directory.
     """
     account_mgr = UserManager.get_account_mgr(user_id)
 
     # Stop loop immediately
     store = UserManager.get_store(user_id)
-    # FIXED — use remove_all_loops (was missing phone arg)
-    await Sched.remove_all_loops(user_id)
-    await store.set("loop_active", False)
-    await store.set("loop_active_accounts", {})
+    try:
+        await Sched.remove_all_loops(user_id)
+    except Exception as e:
+        log.warning("[Reset] remove_all_loops failed: %s", e)
+    try:
+        await store.set("loop_active", False)
+        await store.set("loop_active_accounts", {})
+    except Exception:
+        pass
 
     # Remove all scheduler jobs
-    schedules = await store.get("schedules", [])
-    for s in schedules:
-        await Sched.remove_schedule(user_id, s["id"])
+    try:
+        schedules = await store.get("schedules", [])
+        for s in schedules:
+            await Sched.remove_schedule(user_id, s["id"])
+    except Exception:
+        pass
 
     # Stop log forwarder if running
-    await _stop_log_forwarder(user_id)
+    try:
+        await _stop_log_forwarder(user_id)
+    except Exception:
+        pass
 
     # Clear forward entity cache
     _forward_entities.pop(user_id, None)
 
-    # FIXED — Clean all runtime caches
+    # Clean all runtime caches
     _cleanup_runtime_caches(user_id)
+    _pending_clients.pop(user_id, None)
+    _owner_viewing_as.pop(user_id, None)
 
     if phone:
         # Reset single account session
@@ -6174,17 +6400,128 @@ async def _reset_all_for_user(user_id: int, phone: str | None = None) -> None:
         account_mgr._data = {"accounts": [], "active_phone": None}
         account_mgr._save()
 
+        # Delete sessions directory contents
+        sessions_dir = USER_DATA_DIR / str(user_id) / "sessions"
+        if sessions_dir.exists():
+            for p in sessions_dir.glob("*"):
+                try:
+                    p.unlink(missing_ok=True)
+                except Exception:
+                    pass
+
+        # Delete media directory
+        media_dir = USER_DATA_DIR / str(user_id) / "media"
+        if media_dir.exists():
+            import shutil
+            try:
+                shutil.rmtree(str(media_dir), ignore_errors=True)
+            except Exception:
+                pass
+
     # Reset storage to defaults
     defaults = Storage._default()
     async with store._lock:
         store._data = defaults
         store._flush()
 
+    if state:
+        try:
+            await state.clear()
+        except Exception:
+            pass
+
     log.info("[User %s] FULL reset completed (phone=%s).", user_id, phone or "all")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  RESET MENU HANDLERS
+#  /reset COMMAND & RESET HANDLERS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@router.message(Command("reset"))
+async def cmd_reset(message: Message, state: FSMContext) -> None:
+    """Reset command to clear junk, destroy sessions, log out completely and clean user data."""
+    uid = message.from_user.id
+    parts = message.text.strip().split()
+    
+    # Owner resetting another user: /reset <target_uid>
+    if len(parts) > 1 and parts[1].isdigit():
+        if not is_owner(uid):
+            await message.reply("❌ Only owners can reset other users.")
+            return
+        target_uid = int(parts[1])
+        await _reset_all_for_user(target_uid)
+        await message.reply(f"🧹 <b>Full reset completed for user <code>{target_uid}</code>.</b>", parse_mode="HTML")
+        return
+
+    # Direct confirmation: /reset confirm
+    if len(parts) > 1 and parts[1].lower() == "confirm":
+        await _reset_all_for_user(uid, state=state)
+        await message.reply(
+            "🧹 <b>Full Reset Completed!</b>\n\n"
+            "• All accounts logged out and sessions destroyed.\n"
+            "• All cached groups, settings, media, and schedules deleted.\n"
+            "• All background broadcast loops stopped.\n\n"
+            "✨ Your bot data is completely fresh. Send /start to begin.",
+            parse_mode="HTML"
+        )
+        return
+
+    # Interactive confirmation prompt
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [create_button("⚠️ Confirm Full Reset & Logout", "trash", "rst:full_confirm", style="DANGER")],
+        [create_button("❌ Cancel", "back", "m:main", style="SECONDARY")],
+    ])
+    await message.reply(
+        "⚠️ <b>WARNING: Full Account & Data Reset</b>\n\n"
+        "This will:\n"
+        "• <b>Log out ALL your Telegram accounts</b> completely\n"
+        "• <b>Delete all session files</b> (.session, .session-journal)\n"
+        "• <b>Stop all active broadcasts</b> and delete all schedules\n"
+        "• <b>Wipe all cached groups, topics, media, and settings</b>\n\n"
+        "Are you sure you want to completely reset everything?",
+        parse_mode="HTML",
+        reply_markup=kb,
+    )
+
+
+@router.callback_query(F.data == "m:reset_prompt")
+async def cb_reset_prompt(cb: CallbackQuery) -> None:
+    uid = cb.from_user.id
+    if not has_access(uid):
+        await cb.answer("❌ Unauthorized.", show_alert=True); return
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [create_button("⚠️ Confirm Full Reset & Logout", "trash", "rst:full_confirm", style="DANGER")],
+        [create_button("❌ Cancel", "back", "m:main", style="SECONDARY")],
+    ])
+    await _edit_or_send(
+        cb,
+        "⚠️ <b>WARNING: Full Account & Data Reset</b>\n\n"
+        "This will:\n"
+        "• <b>Log out ALL your Telegram accounts</b> completely\n"
+        "• <b>Delete all session files</b> (.session, .session-journal)\n"
+        "• <b>Stop all active broadcasts</b> and delete all schedules\n"
+        "• <b>Wipe all cached groups, topics, media, and settings</b>\n\n"
+        "Are you sure you want to completely reset everything?",
+        kb,
+    )
+    await cb.answer()
+
+
+@router.callback_query(F.data == "rst:full_confirm")
+async def cb_reset_full_confirm(cb: CallbackQuery, state: FSMContext) -> None:
+    uid = cb.from_user.id
+    await _reset_all_for_user(uid, state=state)
+    await _edit_or_send(
+        cb,
+        "🧹 <b>Full Reset Completed!</b>\n\n"
+        "• All accounts logged out and sessions destroyed.\n"
+        "• All cached groups, settings, media, and schedules deleted.\n"
+        "• All background broadcast loops stopped.\n\n"
+        "✨ Your profile is completely fresh. Send /start to begin.",
+        _get_main_kb(uid),
+    )
+    await cb.answer("Reset complete!")
+
 
 @router.callback_query(F.data == "m:reset")
 async def cb_reset_menu(cb: CallbackQuery) -> None:
@@ -6211,7 +6548,6 @@ async def cb_reset_json(cb: CallbackQuery) -> None:
     accounts = account_mgr.get_accounts()
     explanation = RESET_EXPLANATIONS["json"]
     if len(accounts) <= 1:
-        # Single account or no accounts → direct confirmation
         phone = accounts[0]["phone"] if accounts else "__none__"
         label = f"{accounts[0]['name']}  ({accounts[0]['phone']})" if accounts else "(no accounts)"
         await _edit_or_send(
@@ -6281,7 +6617,6 @@ async def cb_reset_all(cb: CallbackQuery) -> None:
         )
 
 
-# ── Account picker → ask confirmation ─────────────────────────────
 @router.callback_query(F.data.startswith("rstpick:"))
 async def cb_reset_pick_account(cb: CallbackQuery) -> None:
     uid = cb.from_user.id
@@ -6310,7 +6645,6 @@ async def cb_reset_pick_account(cb: CallbackQuery) -> None:
         )
 
 
-# ── "Reset All Accounts" picker ───────────────────────────────────
 @router.callback_query(F.data.startswith("rstpickall:"))
 async def cb_reset_pick_all(cb: CallbackQuery) -> None:
     uid = cb.from_user.id
@@ -6333,7 +6667,6 @@ async def cb_reset_pick_all(cb: CallbackQuery) -> None:
         )
 
 
-# ── Confirmation: YES ─────────────────────────────────────────────
 @router.callback_query(F.data.startswith("rstyes:"))
 async def cb_reset_confirm_yes(cb: CallbackQuery) -> None:
     uid = cb.from_user.id
@@ -6382,7 +6715,6 @@ async def cb_reset_confirm_yes(cb: CallbackQuery) -> None:
         )
 
 
-# ── Confirmation: NO → back to Reset Menu ─────────────────────────
 @router.callback_query(F.data == "rstno")
 async def cb_reset_confirm_no(cb: CallbackQuery) -> None:
     await cb.answer()
@@ -6399,7 +6731,7 @@ async def cb_reset_confirm_no(cb: CallbackQuery) -> None:
 @router.message(F.chat.type == "private")
 async def fallback_private_handler(message: Message, state: FSMContext) -> None:
     uid = message.from_user.id
-    if is_owner(uid) or uid in ADMIN_IDS:
+    if is_owner(uid) or is_admin(uid) or PremiumManager.is_premium(uid):
         return
     # If user is in an active conversational state, let state handlers process it
     curr_state = await state.get_state()

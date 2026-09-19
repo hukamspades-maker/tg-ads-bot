@@ -341,6 +341,90 @@ async def run_tests() -> int:
     else:
         print("PASS: all 4 configured owners verified successfully")
 
+    # ── 17. AdminManager & is_admin test ─────────────────────────
+    test_admin_uid = 555444333
+    await main.AdminManager.add_admin(test_admin_uid)
+    if not main.is_admin(test_admin_uid):
+        print("FAIL: test_admin_uid was not recognized as admin")
+        failures += 1
+    else:
+        print("PASS: AdminManager dynamically added and recognized admin")
+
+    kb_admin = main._get_main_kb(test_admin_uid)
+    admin_btn = any(any("Admin Panel" in b.text for b in r) for r in kb_admin.inline_keyboard)
+    if not admin_btn:
+        print("FAIL: Admin Panel button missing in admin's main menu")
+        failures += 1
+    else:
+        print("PASS: Admin Panel button present for admins in main menu")
+
+    reset_btn = any(any("Reset & Clean All" in b.text for b in r) for r in kb_admin.inline_keyboard)
+    if not reset_btn:
+        print("FAIL: Reset & Clean All button missing in main menu")
+        failures += 1
+    else:
+        print("PASS: Reset & Clean All button present in main menu")
+
+    # Clean up test admin
+    await main.AdminManager.remove_admin(test_admin_uid)
+    if main.is_admin(test_admin_uid):
+        print("FAIL: test_admin_uid was not removed from admins")
+        failures += 1
+    else:
+        print("PASS: AdminManager dynamically removed admin successfully")
+
+    # ── 18. Two-Tier (Paid vs Free) Plan Logic ───────────────────
+    test_paid_uid = 777888999
+    # Grant premium for 1 hour
+    await main.PremiumManager.grant(test_paid_uid, 3600, "1h", 8603872187)
+    if not main.PremiumManager.is_premium(test_paid_uid):
+        print("FAIL: test_paid_uid is not recognized as premium")
+        failures += 1
+    else:
+        print("PASS: PremiumManager granted and recognized premium user")
+
+    # Force-join bypass test for paid user
+    class MockMsg:
+        class FromUser:
+            id = test_paid_uid
+        from_user = FromUser()
+    fj_passed = await main._check_force_join(MockMsg(), bot)
+    if not fj_passed:
+        print("FAIL: Paid user was not bypassed from force-join")
+        failures += 1
+    else:
+        print("PASS: Paid user successfully bypassed force-join check")
+
+    # Bio skip test for paid user
+    class FakeClient:
+        def __init__(self):
+            self.bio_updated = False
+        async def __call__(self, req):
+            self.bio_updated = True
+    fake_cli = FakeClient()
+    await main.force_update_account_bio(fake_cli, "+123456", user_id=test_paid_uid)
+    if fake_cli.bio_updated:
+        print("FAIL: force_update_account_bio modified bio for paid user")
+        failures += 1
+    else:
+        print("PASS: force_update_account_bio skipped bio update for paid user")
+
+    # Clean up premium user
+    await main.PremiumManager.revoke(test_paid_uid)
+    if main.PremiumManager.is_premium(test_paid_uid):
+        print("FAIL: test_paid_uid was not revoked from premium")
+        failures += 1
+    else:
+        print("PASS: PremiumManager revoked premium user successfully")
+
+    # ── 19. Full Reset & Cleanup Test ─────────────────────────────
+    reset_uid = 123987456
+    u_dir = main.USER_DATA_DIR / str(reset_uid)
+    u_dir.mkdir(parents=True, exist_ok=True)
+    (u_dir / "test_junk.txt").write_text("junk", encoding="utf-8")
+    await main._reset_all_for_user(reset_uid)
+    print("PASS: _reset_all_for_user executed without error")
+
     return failures
 
 

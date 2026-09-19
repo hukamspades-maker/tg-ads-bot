@@ -20,13 +20,10 @@ OWNER_ID: int       = int(os.getenv("OWNER_ID", "8603872187"))   # primary owner
 OWNER_USERNAME: str = "@oldsit"    # Telegram username (with @)
 
 # ── Admins ────────────────────────────────────────────────────────
-# Add Telegram user IDs of admins here.  Each admin gets their own
-# isolated sessions, settings, and broadcast data.  The owner can
-# view/manage any admin's data and has exclusive dashboard access.
-ADMIN_IDS: list[int] = [
-    # 989009,
-    # 998977,
-]
+# Add Telegram user IDs of admins here or via ADMIN_IDS env variable (comma-separated).
+# Dynamic admins can also be added via the /addadmin command or Admin Panel.
+_admin_ids_env = os.getenv("ADMIN_IDS", "")
+ADMIN_IDS: list[int] = [int(x.strip()) for x in _admin_ids_env.split(",") if x.strip().isdigit()]
 
 # ── Premium Plans ──────────────────────────────────────────────────
 # Each plan: label, duration in days, price in USD.
